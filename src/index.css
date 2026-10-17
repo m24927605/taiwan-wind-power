@@ -1,0 +1,52 @@
+:root {
+  --ink: #04070d;
+  --ink-2: #0a111c;
+  --line: rgba(190, 220, 255, 0.14);
+  --line-strong: rgba(190, 220, 255, 0.32);
+  --text: #e8eef5;
+  --text-dim: rgba(232, 238, 245, 0.62);
+  --text-faint: rgba(232, 238, 245, 0.38);
+  --tide: #5fe1ff;
+  --wind: #ffd27a;
+  --signal: #ff5a4a;
+  --glass: rgba(8, 14, 24, 0.55);
+  --serif: 'Noto Serif TC', 'Songti TC', serif;
+  --sans: 'Inter', 'PingFang TC', 'Noto Sans TC', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.app {
+  position: fixed;
+  inset: 0;
+}
+
+.app canvas {
+  touch-action: none;
+}
