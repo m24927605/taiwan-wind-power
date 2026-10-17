@@ -144,6 +144,6 @@ function createMaterial() {
 
 export function Terrain({ elevation }: { elevation: Elevation }) {
   const geometry = useMemo(() => buildGeometry(elevation), [elevation])
-  const material = useMemo(createMaterial, [])
+  const material = useMemo(() => createMaterial(), [])
   return <mesh geometry={geometry} material={material} name="terrain" />
 }

@@ -15,8 +15,9 @@ export function SceneClock() {
   const sun = useRef<THREE.DirectionalLight>(null)
   const moon = useRef<THREE.DirectionalLight>(null)
   const hemi = useRef<THREE.HemisphereLight>(null)
-  const time = useRef(useStore.getState().time)
-  const synced = useRef(time.current)
+  const initialTime = useStore.getState().time
+  const time = useRef(initialTime)
+  const synced = useRef(initialTime)
   const sinceSync = useRef(0)
   const colors = useMemo(() => ({ noon: new THREE.Color(1, 0.97, 0.92), low: new THREE.Color(1, 0.55, 0.3) }), [])
 

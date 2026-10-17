@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js'
 import type { Elevation } from '../data/elevation'
@@ -144,7 +144,6 @@ interface Simulation {
   cur0: THREE.DataTexture
   cur1: THREE.DataTexture
   mesh: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>
-  loadedHour: number
 }
 
 function createSimulation(gl: THREE.WebGLRenderer, size: number, elevation: Elevation): Simulation {
@@ -193,7 +192,7 @@ function createSimulation(gl: THREE.WebGLRenderer, size: number, elevation: Elev
   const mesh = new THREE.Mesh(geometry, material)
   mesh.frustumCulled = false
   mesh.renderOrder = 2
-  return { gpu, variable, cur0, cur1, mesh, loadedHour: -1 }
+  return { gpu, variable, cur0, cur1, mesh }
 }
 
 function disposeSimulation(sim: Simulation) {
@@ -207,9 +206,11 @@ function disposeSimulation(sim: Simulation) {
 export function Kuroshio({ elevation, weather, size }: { elevation: Elevation; weather: Weather; size: number }) {
   const gl = useThree((s) => s.gl)
   const [sim, setSim] = useState<Simulation | null>(null)
+  const loadedHour = useRef(-1)
 
   useEffect(() => {
     const next = createSimulation(gl, size, elevation)
+    loadedHour.current = -1
     setSim(next)
     return () => disposeSimulation(next)
   }, [gl, size, elevation])
@@ -219,11 +220,11 @@ export function Kuroshio({ elevation, weather, size }: { elevation: Elevation; w
     const dt = Math.min(rawDt, 0.05)
     const f = hourIndex(weather, useStore.getState().time)
     const hour = Math.floor(f)
-    if (hour !== sim.loadedHour) {
+    if (hour !== loadedHour.current) {
       const next = Math.min(hour + 1, weather.currents.length - 1)
       upload(sim.cur0, weather.currents[hour])
       upload(sim.cur1, weather.currents[next])
-      sim.loadedHour = hour
+      loadedHour.current = hour
     }
     const u = sim.variable.material.uniforms
     u.uDt.value = dt

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { resetView } from '../scene/CameraRig'
+import { resetView } from '../scene/camera'
 import { atmosphere } from '../scene/atmosphere'
 import { useStore, type Tool } from '../state'
 
@@ -7,7 +7,7 @@ function setTool(tool: Tool) {
   useStore.setState({ tool, measure: [], selected: tool === 'measure' ? null : useStore.getState().selected })
 }
 
-export function toggleEngineering() {
+function toggleEngineering() {
   const engineering = !useStore.getState().engineering
   atmosphere.uDebug.value = engineering ? 1 : 0
   useStore.setState({ engineering })

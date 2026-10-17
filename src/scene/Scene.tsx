@@ -23,6 +23,7 @@ const MAX_DPR = Math.min(typeof devicePixelRatio === 'number' ? devicePixelRatio
 export function Scene() {
   const elevation = useStore((s) => s.elevation)
   const weather = useStore((s) => s.weather)
+  const stage = useStore((s) => s.stage)
   // Adaptive resolution: drop toward 1x when frames run long, recover when there is headroom.
   const [dpr, setDpr] = useState(MAX_DPR)
 
@@ -30,6 +31,7 @@ export function Scene() {
     <Canvas
       flat
       dpr={dpr}
+      frameloop={stage === 'intro' ? 'never' : 'always'}
       camera={{ fov: 38, near: 0.05, far: 12000 }}
       gl={{ antialias: false, powerPreference: 'high-performance', localClippingEnabled: true, stencil: false }}
     >

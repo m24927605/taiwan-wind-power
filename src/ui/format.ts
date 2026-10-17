@@ -3,10 +3,14 @@ import { useEffect, useState } from 'react'
 const TZ = 'Asia/Taipei'
 
 const dateFmt = new Intl.DateTimeFormat('zh-TW', { timeZone: TZ, month: 'numeric', day: 'numeric', weekday: 'short' })
+const dayFmt = new Intl.DateTimeFormat('zh-TW', { timeZone: TZ, month: 'numeric', day: 'numeric' })
+const weekdayFmt = new Intl.DateTimeFormat('zh-TW', { timeZone: TZ, weekday: 'short' })
 const timeFmt = new Intl.DateTimeFormat('zh-TW', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false })
 const hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hour12: false })
 
 export const formatDate = (t: number) => dateFmt.format(t * 1000)
+export const formatDay = (t: number) => dayFmt.format(t * 1000)
+export const formatWeekday = (t: number) => weekdayFmt.format(t * 1000)
 export const formatTime = (t: number) => timeFmt.format(t * 1000)
 export const taipeiHour = (t: number) => Number(hourFmt.format(t * 1000)) % 24
 

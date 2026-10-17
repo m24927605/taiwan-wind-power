@@ -4,13 +4,11 @@ import * as THREE from 'three'
 import { TURBINES, WIND_FARMS } from '../../data/windfarms'
 import { useStore } from '../../state'
 import { atmosphere } from '../atmosphere'
+import { LOD_MID, LOD_NEAR, lodCounts } from './lod'
 import { TURBINE } from './spec'
 import { TURBINE_SCALE, farmDynamics } from './dynamics'
 import { useTurbineModel } from './useTurbineModel'
 
-// Distance thresholds (world units) between LOD buckets: full mesh, simplified mesh, light point.
-export const LOD_NEAR = 7
-export const LOD_MID = 70
 const REBUCKET_EVERY = 3
 
 const COUNT = TURBINES.length
@@ -221,6 +219,3 @@ export function WindFarms() {
 
   return <primitive object={group} />
 }
-
-/** Latest LOD bucket sizes, read by the engineering overlay. */
-export const lodCounts: [number, number, number] = [0, 0, 0]

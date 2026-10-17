@@ -4,6 +4,9 @@ import type { Weather } from './data/weather'
 
 export type Tool = 'inspect' | 'measure'
 
+/** intro: polishing the inkstone · enter: cross-fade into the strait · main: free exploration. */
+export type Stage = 'intro' | 'enter' | 'main'
+
 export interface RenderStats {
   fps: number
   frameMs: number
@@ -19,7 +22,7 @@ export interface RenderStats {
 }
 
 interface State {
-  introDone: boolean
+  stage: Stage
   elevation: Elevation | null
   weather: Weather | null
   error: string | null
@@ -40,7 +43,7 @@ interface State {
 }
 
 export const useStore = create<State>(() => ({
-  introDone: false,
+  stage: new URLSearchParams(location.search).has('skip') ? 'main' : 'intro',
   elevation: null,
   weather: null,
   error: null,

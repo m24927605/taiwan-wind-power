@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { TURBINES } from '../data/windfarms'
 import { useStore } from '../state'
-import { flyToTurbine } from './CameraRig'
+import { flyToTurbine } from './camera'
 import { pickGround, pickTurbine } from './picking'
 
 const CLICK_SLOP_PX = 6

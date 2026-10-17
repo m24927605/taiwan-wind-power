@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useStore } from '../state'
-import { formatDate, formatTime, taipeiHour } from './format'
+import { formatDate, formatDay, formatTime, formatWeekday, taipeiHour } from './format'
 
 const TIMELAPSE_HOURS_PER_SECOND = 1.5
 
@@ -52,7 +52,8 @@ export function Timeline() {
       <div className="timeline__track">
         {range.days.map((d) => (
           <span key={d} className="timeline__day" style={{ left: `${pct(d)}%` }}>
-            {formatDate(d)}
+            {formatDay(d)}
+            <em>{formatWeekday(d)}</em>
           </span>
         ))}
         <span className="timeline__now" style={{ left: `${pct(now)}%` }} title="現在" />

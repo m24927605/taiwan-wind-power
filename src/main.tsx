@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
-import { getControls } from './scene/CameraRig.tsx'
+import { getControls } from './scene/camera.ts'
 import { useStore } from './state.ts'
 
 // Dev hook: document.dispatchEvent(new CustomEvent('store:set', { detail: {...} })) patches state.

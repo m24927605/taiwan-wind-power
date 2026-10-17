@@ -1,7 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 import { useStore } from '../state'
-import { lodCounts } from './turbine/WindFarms'
+import { lodCounts } from './turbine/lod'
 
 const PUBLISH_EVERY = 0.5
 
