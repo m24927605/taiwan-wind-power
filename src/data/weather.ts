@@ -4,7 +4,7 @@ import { WIND_FARMS } from './windfarms'
 // Live hourly ocean currents (Open-Meteo Marine) on a grid over the domain, and hub-height
 // wind (Open-Meteo Forecast, 100 m) at every wind farm, from yesterday through three days ahead.
 
-export const CURRENT_GRID = { cols: 18, rows: 18 } as const
+export const CURRENT_GRID = { cols: 14, rows: 14 } as const
 
 export interface Weather {
   /** Hourly timestamps, unix seconds. */
@@ -13,6 +13,7 @@ export interface Weather {
   currents: Float32Array[]
   /** Per farm: [speed m/s, direction-from degrees] per hour, interleaved. */
   wind: Float32Array[]
+  /** When the data was retrieved from Open-Meteo, unix seconds. */
   fetchedAt: number
 }
 
@@ -34,15 +35,35 @@ interface Hourly<K extends string> {
   hourly: { time: number[] } & Record<K, (number | null)[]>
 }
 
-async function getJson<T>(url: string): Promise<T> {
+// Open-Meteo bills every coordinate of a multi-point request as one call, and the data only
+// changes hourly, so responses are kept per browser for half an hour.
+const CACHE_TTL_MS = 30 * 60 * 1000
+
+async function getJson<T>(url: string): Promise<{ at: number; body: T }> {
+  const key = `wind-tide:${url}`
+  try {
+    const cached = localStorage.getItem(key)
+    if (cached) {
+      const entry = JSON.parse(cached) as { at: number; body: T }
+      if (Date.now() - entry.at < CACHE_TTL_MS) return entry
+    }
+  } catch {
+    // Storage unavailable or corrupt: fall through to the network.
+  }
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`)
-  return res.json() as Promise<T>
+  const entry = { at: Date.now(), body: (await res.json()) as T }
+  try {
+    localStorage.setItem(key, JSON.stringify(entry))
+  } catch {
+    // Quota exceeded or storage blocked: the live response is still used.
+  }
+  return entry
 }
 
 export async function fetchWeather(): Promise<Weather> {
   const { lats, lons } = gridCoordinates()
-  const [marine, wind] = await Promise.all([
+  const [marineEntry, windEntry] = await Promise.all([
     getJson<Hourly<'ocean_current_velocity' | 'ocean_current_direction'>[]>(
       `https://marine-api.open-meteo.com/v1/marine?latitude=${lats}&longitude=${lons}` +
         `&hourly=ocean_current_velocity,ocean_current_direction&${RANGE}`,
@@ -54,6 +75,8 @@ export async function fetchWeather(): Promise<Weather> {
     ),
   ])
 
+  const marine = marineEntry.body
+  const wind = windEntry.body
   const times = marine[0].hourly.time
   const currents = times.map((_, h) => {
     const frame = new Float32Array(marine.length * 2)
@@ -78,7 +101,7 @@ export async function fetchWeather(): Promise<Weather> {
     return out
   })
 
-  return { times, currents, wind: windByFarm, fetchedAt: Date.now() / 1000 }
+  return { times, currents, wind: windByFarm, fetchedAt: Math.min(marineEntry.at, windEntry.at) / 1000 }
 }
 
 /** Fractional hour index of a timestamp, clamped to the available range. */
