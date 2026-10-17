@@ -111,8 +111,9 @@ function createMaterial(elevation: Elevation) {
 
         // Cartographic isobaths: 50 m on the shelf, 500 m on the slope.
         float lines = isobath(depth, 50.0) * (1.0 - smoothstep(150.0, 300.0, depth)) + isobath(depth, 500.0) * 0.8;
-        lines *= smoothstep(0.5, 1.0, bed.y);
-        col = mix(col, mix(vec3(0.3, 0.8, 0.95) * 0.12, col * 1.35 + 0.02, uDay), lines * 0.35);
+        // Cartographic lines belong to the map view; up close the 440 m bathymetry grid would show.
+        lines *= smoothstep(0.5, 1.0, bed.y) * smoothstep(0.004, 0.03, footprint);
+        col = mix(col, mix(vec3(0.3, 0.8, 0.95) * 0.12, col * 1.12 + 0.01, uDay), lines * 0.35);
 
         col = applyFog(col, vWorld);
         col = mix(col, vec3(0.02, 0.05, 0.09) + vec3(0.1, 0.9, 1.0) * lines * 0.6, uDebug);

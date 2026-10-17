@@ -3,6 +3,13 @@ import { loadElevation } from './data/elevation'
 import { fetchWeather } from './data/weather'
 import { Scene } from './scene/Scene'
 import { useStore } from './state'
+import { EngineeringPanel } from './ui/EngineeringPanel'
+import { Metrics, Title } from './ui/Hud'
+import { Legend } from './ui/Legend'
+import { Timeline } from './ui/Timeline'
+import { ToolHint, Toolbar } from './ui/Toolbar'
+import { TurbinePanel } from './ui/TurbinePanel'
+import './ui/ui.css'
 
 export default function App() {
   useEffect(() => {
@@ -14,6 +21,16 @@ export default function App() {
   return (
     <main className="app">
       <Scene />
+      <div className="ui">
+        <Title />
+        <Metrics />
+        <Toolbar />
+        <ToolHint />
+        <EngineeringPanel />
+        <TurbinePanel />
+        <Legend />
+        <Timeline />
+      </div>
     </main>
   )
 }

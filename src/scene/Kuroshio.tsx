@@ -104,7 +104,7 @@ function createMaterial(elevation: Elevation) {
         vec3 center = vec3(ground.x, 0.03, ground.y);
         float dist = length(center - uCameraPos);
         // Streak length follows speed; width holds a steady on-screen thickness.
-        float len = clamp(speed, 0.0, 1.8) * 4.5 + dist * 0.004;
+        float len = (clamp(speed, 0.0, 1.8) * 4.5 + 0.8) * clamp(dist / 220.0, 0.012, 1.0);
         float width = clamp(dist * 0.0011, 0.008, 0.6);
         vec2 side = vec2(-dir.y, dir.x);
         vec2 offset = dir * position.x * len + side * position.y * width;
