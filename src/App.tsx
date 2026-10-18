@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { loadElevation } from './data/elevation'
 import { fetchWeather } from './data/weather'
-import { Intro } from './intro/Intro'
 import { Scene } from './scene/Scene'
 import { useStore } from './state'
 import { EngineeringPanel } from './ui/EngineeringPanel'
@@ -13,7 +12,6 @@ import { TurbinePanel } from './ui/TurbinePanel'
 import './ui/ui.css'
 
 export default function App() {
-  const stage = useStore((s) => s.stage)
   useEffect(() => {
     const fail = (e: unknown) => useStore.setState({ error: e instanceof Error ? e.message : String(e) })
     loadElevation().then((elevation) => useStore.setState({ elevation }), fail)
@@ -23,7 +21,7 @@ export default function App() {
   return (
     <main className="app">
       <Scene />
-      <div className={`ui ${stage === 'intro' ? 'is-hidden' : ''}`}>
+      <div className="ui">
         <Title />
         <Metrics />
         <Toolbar />
@@ -36,7 +34,6 @@ export default function App() {
         <Legend />
         <Timeline />
       </div>
-      {stage !== 'main' && <Intro />}
     </main>
   )
 }

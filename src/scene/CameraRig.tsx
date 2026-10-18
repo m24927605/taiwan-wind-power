@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { WORLD } from '../geo/domain'
 import { useStore } from '../state'
-import { MATCH_CUT, flyToOverview, overviewPosition, registerControls } from './camera'
+import { flyToOverview, overviewPosition, registerControls } from './camera'
 
 /** Within this distance (km) of the overview pose the camera counts as being at the overview. */
 const OVERVIEW_TOLERANCE = 40
@@ -17,24 +17,12 @@ export function CameraRig() {
     const c = ref.current
     if (!c) return
     registerControls(c)
-    if (useStore.getState().stage === 'main') flyToOverview(false)
-    else c.setLookAt(...MATCH_CUT.position.toArray(), ...MATCH_CUT.target.toArray(), false)
+    flyToOverview(false)
     c.setBoundary(new THREE.Box3(new THREE.Vector3(WORLD.minX, -1, WORLD.minZ), new THREE.Vector3(WORLD.maxX, 10, WORLD.maxZ)))
     return () => {
       registerControls(null)
     }
   }, [])
-
-  // Leaving the intro: a slow, cinematic descent from the match-cut frame to the overview.
-  const stage = useStore((s) => s.stage)
-  useEffect(() => {
-    const c = ref.current
-    if (!c || stage !== 'enter') return
-    c.smoothTime = 1.4
-    flyToOverview(true)
-    const id = setTimeout(() => (c.smoothTime = 0.35), 4000)
-    return () => clearTimeout(id)
-  }, [stage])
 
   // Keep depth precision across a 1000x zoom range by tying the near plane to altitude.
   useFrame(() => {

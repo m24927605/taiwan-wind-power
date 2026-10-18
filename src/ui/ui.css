@@ -13,14 +13,6 @@
   pointer-events: auto;
 }
 
-.ui {
-  transition: opacity 1.2s ease 0.6s;
-}
-
-.ui.is-hidden {
-  opacity: 0;
-}
-
 .glass {
   background: var(--glass);
   backdrop-filter: blur(18px) saturate(1.3);

@@ -59,7 +59,7 @@ export function Toolbar() {
 
 /** A prominent way home whenever the camera has left the island-wide view. */
 export function OverviewReturn() {
-  const show = useStore((s) => s.atOverview === false && s.stage === 'main')
+  const show = useStore((s) => !s.atOverview)
   if (!show) return null
   return (
     <button className="overview-return glass" onClick={resetView}>

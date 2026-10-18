@@ -2,15 +2,13 @@
 
 A live digital twin of the Taiwan Strait, built with Three.js and React Three Fiber.
 
-It opens on an inkstone that you polish by hand. As the surface turns to a mirror, a gold-leaf
-engraving of Taiwan rises out of it, and the camera falls through the engraving into the real
-strait: Sentinel-2 imagery draped over the island, an FFT ocean raised by today's wave forecast,
+It opens straight onto the strait: Sentinel-2 imagery draped over the island, an FFT ocean raised by today's wave forecast,
 the Kuroshio current streaming past the east coast, and 513 offshore turbines turning to the
 wind that is blowing over the strait right now.
 
 ```bash
 npm install
-npm run dev            # http://localhost:5199  (append ?skip to bypass the intro)
+npm run dev            # http://localhost:5199
 npm run build
 ```
 
@@ -70,7 +68,6 @@ src/
     Layer.tsx         error + Suspense boundary per asset-loading part of the scene
     farmAreas.ts      farm outlines derived from the layout, and analytic farm picking
     turbine/          GLB access, per-farm dynamics, instanced LOD, cutaway hero
-  intro/            inkstone polishing intro
   ui/               HUD, timeline, toolbar, turbine panel, engineering overlay
   state.ts          zustand store: stage, data, scene time, tools, stats
 ```
@@ -126,7 +123,7 @@ current speed and camera distance, so they read as flow in the overview and as s
 close.
 
 **One elevation texture, many uses.** A single R16F texture provides ocean depth colouring,
-isobaths, surf, the particle land mask and the intro engraving.
+isobaths, surf and the particle land mask.
 
 **Terrain as an asset.** The land is modelled at true scale, with no vertical exaggeration. The
 mesh starts as a 2048² z11 grid cut down to the cells that touch land (1.76M triangles).

@@ -13,12 +13,6 @@ export const OVERVIEW = {
   target: new THREE.Vector3(5, 0, -5),
 }
 
-// Straight down on Taiwan, north up: the frame the inkstone engraving cuts into.
-export const MATCH_CUT = {
-  position: new THREE.Vector3(2, 250, -4.99),
-  target: new THREE.Vector3(2, 0, -5),
-}
-
 let controlsInstance: CameraControls | null = null
 
 export function registerControls(controls: CameraControls | null) {
