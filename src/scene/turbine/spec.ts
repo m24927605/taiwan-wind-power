@@ -10,6 +10,8 @@ export const TURBINE = {
   ratedMs: 12,
   cutOutMs: 25,
   ratedRpm: 10.6,
+  /** Feathered rotors still idle in a breeze rather than stand dead still. */
+  idleRpm: 1.5,
 } as const
 
 export const TURBINE_GLB_URL = '/models/turbine.glb'
@@ -22,9 +24,13 @@ export function powerAt(windMs: number): number {
   return (ratedPowerMW * (windMs ** 3 - cutInMs ** 3)) / (ratedMs ** 3 - cutInMs ** 3)
 }
 
-/** Rotor speed in rpm: tip-speed-ratio tracking up to rated, then held at rated rpm. */
+/**
+ * Rotor speed in rpm: tip-speed-ratio tracking up to rated, then held at rated rpm. Outside the
+ * operating range the blades are feathered and the rotor idles without producing power.
+ */
 export function rpmAt(windMs: number): number {
-  const { cutInMs, ratedMs, cutOutMs, ratedRpm } = TURBINE
-  if (windMs < cutInMs || windMs >= cutOutMs) return 0
+  const { cutInMs, ratedMs, cutOutMs, ratedRpm, idleRpm } = TURBINE
+  if (windMs < cutInMs) return idleRpm * Math.min(1, windMs / cutInMs)
+  if (windMs >= cutOutMs) return idleRpm
   return ratedRpm * Math.min(1, 0.35 + (0.65 * (windMs - cutInMs)) / (ratedMs - cutInMs))
 }

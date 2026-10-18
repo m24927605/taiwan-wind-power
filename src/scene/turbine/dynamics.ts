@@ -41,7 +41,7 @@ export function advanceFarms(weather: Weather, time: number, dt: number) {
       ? farmDynamics.yaw[f] + shortestAngle(farmDynamics.yaw[f], target) * Math.min(1, dt * 0.8)
       : target
     const rpm = rpmAt(speed)
-    farmDynamics.rpm[f] += (rpm - farmDynamics.rpm[f]) * Math.min(1, dt * 0.5)
+    farmDynamics.rpm[f] = farmDynamics.initialised ? farmDynamics.rpm[f] + (rpm - farmDynamics.rpm[f]) * Math.min(1, dt * 0.5) : rpm
     farmDynamics.spin[f] = (farmDynamics.spin[f] + (farmDynamics.rpm[f] / 60) * Math.PI * 2 * dt) % (Math.PI * 2)
     farmDynamics.power[f] = powerAt(speed) * (WIND_FARMS[f].ratedMW / TURBINE.ratedPowerMW)
   }
