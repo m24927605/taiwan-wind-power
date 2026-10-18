@@ -24,7 +24,7 @@ const turbineUniforms = {
 }
 
 function createMaterial(isRotor: boolean, lod: number): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.05 })
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 })
   // onBeforeCompile sources are identical for body and rotor; key them apart or three shares one program.
   material.customProgramCacheKey = () => `turbine-${isRotor ? 'rotor' : 'body'}`
   material.onBeforeCompile = (shader) => {

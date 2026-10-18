@@ -11,7 +11,7 @@ import { Kuroshio } from './Kuroshio'
 import { Measure } from './Measure'
 import { Ocean } from './ocean/Ocean'
 import { SceneClock } from './SceneClock'
-import { Sky } from './Sky'
+import { Sky, SkyEnvironment } from './Sky'
 import { StatsProbe } from './StatsProbe'
 import { Terrain } from './Terrain'
 import { HeroTurbine } from './turbine/HeroTurbine'
@@ -32,6 +32,7 @@ export function Scene() {
   return (
     <Canvas
       flat
+      shadows="soft"
       dpr={dpr}
       frameloop={stage === 'intro' ? 'never' : 'always'}
       camera={{ fov: 38, near: 0.05, far: 12000 }}
@@ -49,6 +50,7 @@ export function Scene() {
       {import.meta.env.DEV && <DevProbe />}
       <CameraRig />
       <Sky />
+      <SkyEnvironment />
       {elevation && <Ocean elevation={elevation} waveResolution={WAVE_RESOLUTION} />}
       <Suspense fallback={null}>
         <Terrain />

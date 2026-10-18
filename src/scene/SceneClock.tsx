@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { sunDirection } from '../geo/sun'
+import { TURBINES } from '../data/windfarms'
 import { useStore } from '../state'
 import { MOON_DIR, atmosphere } from './atmosphere'
 import { advanceFarms } from './turbine/dynamics'
@@ -9,12 +10,13 @@ import { advanceFarms } from './turbine/dynamics'
 const TAIWAN_LON = 120.9
 const TAIWAN_LAT = 23.7
 const STORE_SYNC_SECONDS = 0.1
+/** Half-width of the sun's shadow frustum around the selected turbine, km (turbines are ~0.7 km tall here). */
+const SHADOW_HALF_EXTENT = 0.5
 
 /** Advances scene time, then derives the sun, lighting and wind-farm state from it. */
 export function SceneClock() {
   const sun = useRef<THREE.DirectionalLight>(null)
   const moon = useRef<THREE.DirectionalLight>(null)
-  const hemi = useRef<THREE.HemisphereLight>(null)
   const initialTime = useStore.getState().time
   const time = useRef(initialTime)
   const synced = useRef(initialTime)
@@ -48,20 +50,35 @@ export function SceneClock() {
     atmosphere.uTime.value += dt
     atmosphere.uCameraPos.value.copy(camera.position)
 
-    if (sun.current && moon.current && hemi.current) {
-      sun.current.position.set(x, y, z).multiplyScalar(100)
-      sun.current.intensity = 3.2 * THREE.MathUtils.smoothstep(y, -0.02, 0.12)
+    if (sun.current && moon.current) {
+      // Shadows only matter for the close-up turbine, so the frustum hugs it.
+      const { selected } = useStore.getState()
+      const focus = selected !== null ? TURBINES[selected] : null
+      sun.current.castShadow = focus !== null
+      sun.current.target.position.set(focus?.x ?? 0, 0, focus?.z ?? 0)
+      sun.current.position.set(x, y, z).multiplyScalar(5).add(sun.current.target.position)
+      sun.current.target.updateMatrixWorld()
+      sun.current.intensity = 1.8 * THREE.MathUtils.smoothstep(y, -0.02, 0.12)
       sun.current.color.lerpColors(colors.low, colors.noon, THREE.MathUtils.smoothstep(y, 0, 0.35))
       moon.current.intensity = 0.35 * (1 - day)
-      hemi.current.intensity = 0.15 + 0.85 * day
     }
   })
 
   return (
     <>
-      <directionalLight ref={sun} />
+      <directionalLight
+        ref={sun}
+        shadow-mapSize={[2048, 2048]}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.002}
+        shadow-camera-left={-SHADOW_HALF_EXTENT}
+        shadow-camera-right={SHADOW_HALF_EXTENT}
+        shadow-camera-top={SHADOW_HALF_EXTENT}
+        shadow-camera-bottom={-SHADOW_HALF_EXTENT}
+        shadow-camera-near={0.5}
+        shadow-camera-far={10}
+      />
       <directionalLight ref={moon} color="#9fb4ff" position={MOON_DIR.clone().multiplyScalar(100)} />
-      <hemisphereLight ref={hemi} args={['#bcd3ee', '#1b2a3a', 1]} />
     </>
   )
 }

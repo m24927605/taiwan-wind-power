@@ -28,13 +28,14 @@ function Hero({ index }: { index: number }) {
 
   const materials = useMemo(() => {
     const plane = new THREE.Plane()
-    const paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.05 })
+    const paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 })
     const shell = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.42,
-      metalness: 0.05,
+      roughness: 0.6,
+      metalness: 0,
       side: THREE.DoubleSide,
       clippingPlanes: [plane],
+      clipShadows: true,
     })
     const machinery = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.6, clippingPlanes: [] })
     return { plane, paint, shell, machinery }
@@ -76,10 +77,17 @@ function Hero({ index }: { index: number }) {
 
   return (
     <group ref={group} position={[turbine.x, 0, turbine.z]} scale={TURBINE_SCALE}>
-      <mesh geometry={hero.tower} material={materials.paint} />
-      <mesh geometry={hero.shell} material={materials.shell} />
-      <mesh geometry={hero.internals} material={materials.machinery} />
-      <mesh ref={rotor} geometry={hero.rotor} material={materials.paint} position={[0, TURBINE.hubHeight, TURBINE.hubOffsetZ]} />
+      <mesh geometry={hero.tower} material={materials.paint} castShadow receiveShadow />
+      <mesh geometry={hero.shell} material={materials.shell} castShadow receiveShadow />
+      <mesh geometry={hero.internals} material={materials.machinery} castShadow receiveShadow />
+      <mesh
+        ref={rotor}
+        geometry={hero.rotor}
+        material={materials.paint}
+        position={[0, TURBINE.hubHeight, TURBINE.hubOffsetZ]}
+        castShadow
+        receiveShadow
+      />
       {labels &&
         PARTS.map((part) => (
           <Html
