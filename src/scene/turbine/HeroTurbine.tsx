@@ -4,19 +4,11 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import * as THREE from 'three'
 import { TURBINES } from '../../data/windfarms'
 import { useStore } from '../../state'
+import { PartCard } from '../../ui/PartCard'
+import { PARTS } from './parts'
 import { TURBINE } from './spec'
 import { TURBINE_SCALE, farmDynamics } from './dynamics'
 import { useTurbineModel } from './useTurbineModel'
-
-// Label anchors in model metres, matching the parts laid out in scripts/build-turbine.ts.
-// `lift` staggers the leader lines (px) so neighbouring labels never overlap.
-const PARTS: { name: string; en: string; at: [number, number, number]; lift: number }[] = [
-  { name: '主軸承', en: 'Main bearing', at: [0, 113.8, 4], lift: 34 },
-  { name: '齒輪箱', en: 'Gearbox', at: [0, 114.2, -2.6], lift: 92 },
-  { name: '發電機', en: 'Generator', at: [0, 114.6, -8.6], lift: 54 },
-  { name: '變流器', en: 'Converter', at: [3.3, 113.2, -12], lift: 120 },
-  { name: '偏航系統', en: 'Yaw drive', at: [0, 108.6, -2], lift: 14 },
-]
 
 const CUT_SECONDS = 1.6
 
@@ -32,6 +24,7 @@ function Hero({ index }: { index: number }) {
   const rotor = useRef<THREE.Mesh>(null)
   const progress = useRef(0)
   const [labels, setLabels] = useState(false)
+  const [openPart, setOpenPart] = useState<string | null>(null)
 
   const materials = useMemo(() => {
     const plane = new THREE.Plane()
@@ -89,14 +82,24 @@ function Hero({ index }: { index: number }) {
       <mesh ref={rotor} geometry={hero.rotor} material={materials.paint} position={[0, TURBINE.hubHeight, TURBINE.hubOffsetZ]} />
       {labels &&
         PARTS.map((part) => (
-          <Html key={part.name} position={part.at} center={false} zIndexRange={[20, 0]} className="part-label-anchor">
-            <div className="part-label" style={{ '--lift': `${part.lift}px` } as CSSProperties}>
+          <Html
+            key={part.name}
+            position={part.at}
+            center={false}
+            zIndexRange={openPart === part.id ? [21, 21] : [20, 0]}
+            className="part-label-anchor"
+          >
+            <div
+              className={`part-label${openPart === part.id ? ' is-open' : ''}`}
+              style={{ '--lift': `${part.lift}px` } as CSSProperties}
+            >
               <span className="part-label__dot" />
               <span className="part-label__line" />
-              <span className="part-label__text">
+              <button className="part-label__text" onClick={() => setOpenPart(openPart === part.id ? null : part.id)}>
                 <b>{part.name}</b>
                 <i>{part.en}</i>
-              </span>
+              </button>
+              {openPart === part.id && <PartCard part={part} farm={turbine.farm} onClose={() => setOpenPart(null)} />}
             </div>
           </Html>
         ))}
