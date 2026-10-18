@@ -97,12 +97,17 @@ function createMaterial(elevation: Elevation, waves: THREE.Texture[]) {
 
         // Filtered wave slopes. Mip averaging flattens the mean slope with distance while the
         // second moment keeps what was averaged away, so far water turns rough, not mirror-flat.
+        // A cascade whose tile spans only a dozen pixels would read as a repeating grid, so it
+        // hands its slopes over to roughness before that point.
+        float metresPerPixel = footprint * 1000.0;
         vec4 w0 = texture2D(uWave0, vWorld.xz * uTileScale.x);
         vec4 w1 = texture2D(uWave1, vWorld.xz * uTileScale.y);
         vec4 w2 = texture2D(uWave2, vWorld.xz * uTileScale.z);
-        vec2 slope = w0.xy + w1.xy + w2.xy;
-        float variance = max(w0.z - dot(w0.xy, w0.xy), 0.0) + max(w1.z - dot(w1.xy, w1.xy), 0.0)
-          + max(w2.z - dot(w2.xy, w2.xy), 0.0) + uMicroVariance;
+        vec3 resolved = 1.0 - smoothstep(vec3(1.0 / 48.0), vec3(1.0 / 12.0), metresPerPixel * uTileScale / 1000.0);
+        vec2 slope = w0.xy * resolved.x + w1.xy * resolved.y + w2.xy * resolved.z;
+        vec3 total = vec3(w0.z, w1.z, w2.z);
+        vec3 mean = vec3(dot(w0.xy, w0.xy), dot(w1.xy, w1.xy), dot(w2.xy, w2.xy));
+        float variance = dot(max(total - mean * resolved, 0.0), vec3(1.0)) + uMicroVariance;
         vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
         float NoV = max(dot(N, V), 0.02);
 
@@ -133,9 +138,9 @@ function createMaterial(elevation: Elevation, waves: THREE.Texture[]) {
         col += vec3(0.75, 0.82, 1.0) * min(moonSpec, 30.0) * 0.12 * (1.0 - uDay);
 
         // Whitecaps where the choppy surface folds over (Jacobian below threshold).
-        float foam = clamp((uFoamThreshold - w0.w) * 2.5, 0.0, 1.0)
-          + clamp((uFoamThreshold - w1.w) * 2.5, 0.0, 1.0) * 0.6
-          + clamp((uFoamThreshold - w2.w) * 2.5, 0.0, 1.0) * 0.3;
+        float foam = clamp((uFoamThreshold - w0.w) * 2.5, 0.0, 1.0) * resolved.x
+          + clamp((uFoamThreshold - w1.w) * 2.5, 0.0, 1.0) * 0.6 * resolved.y
+          + clamp((uFoamThreshold - w2.w) * 2.5, 0.0, 1.0) * 0.3 * resolved.z;
 
         // Surf where the seabed shoals, drifting shoreward.
         float shore = 1.0 - smoothstep(0.0, 22.0, depth);
