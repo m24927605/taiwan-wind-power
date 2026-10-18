@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>風與潮 Wind &amp; Tide</title>
+<meta name="description" content="台灣海峽即時數位孿生的介紹影片 · A film of a live digital twin of the Taiwan Strait">
+<meta property="og:title" content="風與潮 Wind &amp; Tide">
+<meta property="og:description" content="台灣海峽即時數位孿生 · A live digital twin of the Taiwan Strait">
+<meta property="og:image" content="https://m24927605.github.io/taiwan-wind-power/poster.jpg">
+<meta property="og:video" content="https://m24927605.github.io/taiwan-wind-power/wind-and-tide-zh.mp4">
+<meta property="og:type" content="video.other">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; background: #05080d; color: #e8eef3; font: 16px/1.6 system-ui, sans-serif;
+    display: grid; place-items: center; }
+  main { width: min(1100px, 100% - 32px); padding: 32px 0; }
+  h1 { margin: 0 0 4px; font-weight: 700; letter-spacing: .08em; }
+  p { margin: 0 0 20px; opacity: .75; }
+  video { width: 100%; border-radius: 10px; background: #000; display: block; }
+  nav { display: flex; gap: 10px; margin: 16px 0 0; flex-wrap: wrap; }
+  nav a, nav button { color: inherit; background: #142030; border: 1px solid #24364a; border-radius: 999px; padding: 6px 16px;
+    font: inherit; cursor: pointer; text-decoration: none; }
+  nav button[aria-pressed="true"] { background: #e8c27a; color: #05080d; border-color: #e8c27a; }
+</style>
+</head>
+<body>
+<main>
+  <h1>風與潮 Wind &amp; Tide</h1>
+  <p>台灣海峽即時數位孿生 · A live digital twin of the Taiwan Strait</p>
+  <video id="film" controls playsinline preload="metadata" poster="poster.jpg" src="wind-and-tide-zh.mp4"></video>
+  <nav>
+    <button data-src="wind-and-tide-zh.mp4" aria-pressed="true">繁體中文</button>
+    <button data-src="wind-and-tide-en.mp4" aria-pressed="false">English</button>
+    <a href="https://github.com/m24927605/taiwan-wind-power">GitHub</a>
+  </nav>
+</main>
+<script>
+  const film = document.getElementById('film')
+  const buttons = document.querySelectorAll('nav button')
+  const pick = (src) => {
+    film.src = src
+    buttons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.src === src)))
+  }
+  buttons.forEach((b) => b.addEventListener('click', () => pick(b.dataset.src)))
+  if (location.hash === '#en') pick('wind-and-tide-en.mp4')
+</script>
+</body>
+</html>
