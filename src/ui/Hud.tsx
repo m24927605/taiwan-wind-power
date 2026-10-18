@@ -2,22 +2,24 @@ import { WIND_FARMS } from '../data/windfarms'
 import { hourIndex } from '../data/weather'
 import { farmDynamics, totalOutputMW } from '../scene/turbine/dynamics'
 import { useStore } from '../state'
-import { compass8, formatNumber, formatTime, useTicker } from './format'
+import { compass8, formatDay, formatNumber, formatTime, useTicker } from './format'
 
 const CAPACITY_MW = WIND_FARMS.reduce((sum, f) => sum + f.turbines * f.ratedMW, 0)
 const TURBINE_COUNT = WIND_FARMS.reduce((sum, f) => sum + f.turbines, 0)
 
 export function Title() {
   const live = useStore((s) => s.live)
+  const weather = useStore((s) => s.weather)
+  const snapshot = weather?.source === 'snapshot'
   return (
     <header className="title">
       <h1>
         風與潮<span>Wind &amp; Tide</span>
       </h1>
       <p className="title__sub">台灣海峽 · 即時數位孿生</p>
-      <p className={`title__live ${live ? 'is-live' : ''}`}>
+      <p className={`title__live ${live && !snapshot ? 'is-live' : ''}`}>
         <i />
-        {live ? 'LIVE · 即時資料' : '時光回放'}
+        {!live ? '時光回放' : snapshot ? `資料快照 · ${formatDay(weather.fetchedAt)} ${formatTime(weather.fetchedAt)}` : 'LIVE · 即時資料'}
       </p>
     </header>
   )
@@ -83,7 +85,10 @@ export function Metrics() {
             {peakCurrent().toFixed(2)}
             <small>m/s</small>
           </dd>
-          <dd className="metrics__note">Open-Meteo · {formatTime(weather.fetchedAt)} 更新</dd>
+          <dd className="metrics__note">
+            Open-Meteo · {weather.source === 'snapshot' && `${formatDay(weather.fetchedAt)} `}
+            {formatTime(weather.fetchedAt)} {weather.source === 'snapshot' ? '快照' : '更新'}
+          </dd>
         </div>
       </dl>
     </aside>

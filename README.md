@@ -18,7 +18,7 @@ npm run build
 
 | Layer | Source | Notes |
 | --- | --- | --- |
-| Bathymetry | AWS Terrain Tiles (Terrarium, z9) | Baked by `scripts/build-elevation.ts` into a 1024² Int16 grid (2 MB) |
+| Bathymetry | AWS Terrain Tiles (Terrarium, z9) | Baked by `scripts/build-elevation.ts` into a 1024² Terrarium-encoded PNG (1.35 MB, lossless metres) |
 | Land surface | AWS Terrain Tiles (Terrarium, z11) | Baked by `scripts/build-terrain.ts` into a simplified 615k-triangle GLB (1.8 MB), true scale |
 | Land imagery | Sentinel-2 cloudless 2024, EOX | Baked by `scripts/build-imagery.ts` into a 4096² WebP over the domain (1.2 MB), a 4096 × 8192 WebP over the island (4.2 MB, desktop only) and a 4096² normal map |
 | Ocean currents | Open-Meteo Marine API | 14 × 14 grid over the domain, hourly, yesterday through three days ahead |
@@ -55,10 +55,12 @@ coordinates are an approximate array layout, and the UI says so.
 ```
 scripts/            offline asset pipeline (Node, run once)
   tiles.ts            Web Mercator tile mosaic -> resampled onto the scene grid
-  build-elevation.ts  Terrarium tiles -> Int16 elevation grid (bathymetry)
+  build-elevation.ts  Terrarium tiles -> Terrarium-encoded PNG elevation grid (bathymetry)
   build-terrain.ts    z11 Terrarium -> land mesh -> meshopt simplify -> quantized GLB
   build-imagery.ts    Sentinel-2 cloudless + z11 normals -> WebP textures
   build-turbine.ts    procedural turbine -> meshopt LOD -> quantized, meshopt-compressed GLB
+  snapshot-weather.ts Open-Meteo responses a week ahead -> bundled fallback for sandboxed hosts
+  build-artifact.ts   artifact-mode build -> one inlined page + .gltf models for claude.ai
 src/
   geo/              domain projection (lon/lat <-> km), solar position, geodesic
   data/             elevation loader, Open-Meteo client (browser-cached), wind farm layout
@@ -176,6 +178,20 @@ reloads cost nothing.
   as back faces unless rendered double-sided.
 - Under React StrictMode, GPU resources created in `useMemo` and disposed in an effect cleanup
   are destroyed before first use. Create and dispose them in the same effect.
+
+## Deploying as a claude.ai artifact
+
+```
+npm run snapshot:weather   # refresh the bundled Open-Meteo fallback (reaches 7 days ahead)
+npm run build:artifact     # dist-artifact/artifact.html plus models, textures and data
+```
+
+Then publish `dist-artifact/artifact.html` with the other files in `dist-artifact/` (except
+`assets/` and `index.html`) as supporting files at the same paths. The artifact host admits
+stylesheets only from Google Fonts and serves only web file types, so the page inlines the app's
+CSS and JS, and the artifact-mode build loads each model as a self-contained `.gltf` repackaged
+losslessly from its `.glb`. Asset URLs are relative everywhere (`base: './'`). If a viewer cannot
+reach Open-Meteo, the app reads the snapshot and labels it as one, with its retrieval time.
 
 ## Credits
 

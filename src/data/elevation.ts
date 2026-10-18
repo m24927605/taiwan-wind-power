@@ -10,11 +10,26 @@ export interface Elevation {
   heightAt(x: number, z: number): number
 }
 
+/** Decodes the Terrarium-encoded PNG (metres = R * 256 + G - 32768) without colour management. */
+async function decodeElevation(blob: Blob, n: number): Promise<Int16Array> {
+  const bitmap = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' })
+  if (bitmap.width !== n || bitmap.height !== n) throw new Error(`elevation: expected ${n}², got ${bitmap.width}x${bitmap.height}`)
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = n
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  ctx.drawImage(bitmap, 0, 0)
+  bitmap.close()
+  const rgba = ctx.getImageData(0, 0, n, n).data
+  const data = new Int16Array(n * n)
+  for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4] * 256 + rgba[i * 4 + 1] - 32768
+  return data
+}
+
 export async function loadElevation(): Promise<Elevation> {
   const res = await fetch(ELEVATION_URL)
   if (!res.ok) throw new Error(`elevation: HTTP ${res.status}`)
-  const data = new Int16Array(await res.arrayBuffer())
   const n = ELEVATION_SIZE
+  const data = await decodeElevation(await res.blob(), n)
 
   const half = new Uint16Array(n * n)
   for (let i = 0; i < data.length; i++) half[i] = THREE.DataUtils.toHalfFloat(data[i] / 1000)

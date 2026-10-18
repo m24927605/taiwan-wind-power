@@ -3,7 +3,8 @@ import { WIND_FARMS } from './windfarms'
 
 // Live hourly ocean currents and sea state (Open-Meteo Marine) on a grid over the domain, and
 // hub-height wind (Open-Meteo Forecast, 100 m) at every wind farm, from yesterday through three
-// days ahead.
+// days ahead. Where Open-Meteo cannot be reached (a sandboxed host), a snapshot bundled at deploy
+// time by scripts/snapshot-weather.ts stands in, and says so.
 
 export const CURRENT_GRID = { cols: 14, rows: 14 } as const
 
@@ -18,12 +19,17 @@ export interface Weather {
   wind: Float32Array[]
   /** When the data was retrieved from Open-Meteo, unix seconds. */
   fetchedAt: number
+  /** Fetched just now, or read from the bundled snapshot. */
+  source: 'live' | 'snapshot'
 }
 
 // Sea state is taken as the median over grid points inside the strait, where the farms are.
 const STRAIT = { west: 119.2, east: 120.6, south: 22.6, north: 25.2 }
 
-const RANGE = 'past_days=1&forecast_days=3&timeformat=unixtime'
+const LIVE_RANGE = 'past_days=1&forecast_days=3&timeformat=unixtime'
+/** A snapshot has to last until the next deploy, so it reaches as far ahead as the marine model. */
+export const SNAPSHOT_RANGE = 'past_days=1&forecast_days=7&timeformat=unixtime'
+const SNAPSHOT_URL = 'data/weather-snapshot.json'
 
 function gridCoordinates() {
   const lats: number[] = []
@@ -67,23 +73,44 @@ async function getJson<T>(url: string): Promise<{ at: number; body: T }> {
   return entry
 }
 
-export async function fetchWeather(): Promise<Weather> {
+type MarineVariable = 'ocean_current_velocity' | 'ocean_current_direction' | 'wave_height' | 'wave_period' | 'wave_direction'
+
+/** Raw Open-Meteo responses, as fetched live and as stored in the snapshot. */
+export interface OpenMeteo {
+  /** Retrieval time, unix milliseconds. */
+  at: number
+  marine: Hourly<MarineVariable>[]
+  wind: Hourly<'wind_speed_100m' | 'wind_direction_100m'>[]
+}
+
+export async function fetchOpenMeteo(range = LIVE_RANGE): Promise<OpenMeteo> {
   const { lats, lons } = gridCoordinates()
-  type MarineVariable = 'ocean_current_velocity' | 'ocean_current_direction' | 'wave_height' | 'wave_period' | 'wave_direction'
-  const [marineEntry, windEntry] = await Promise.all([
-    getJson<Hourly<MarineVariable>[]>(
+  const [marine, wind] = await Promise.all([
+    getJson<OpenMeteo['marine']>(
       `https://marine-api.open-meteo.com/v1/marine?latitude=${lats}&longitude=${lons}` +
-        `&hourly=ocean_current_velocity,ocean_current_direction,wave_height,wave_period,wave_direction&${RANGE}`,
+        `&hourly=ocean_current_velocity,ocean_current_direction,wave_height,wave_period,wave_direction&${range}`,
     ),
-    getJson<Hourly<'wind_speed_100m' | 'wind_direction_100m'>[]>(
+    getJson<OpenMeteo['wind']>(
       `https://api.open-meteo.com/v1/forecast?latitude=${WIND_FARMS.map((f) => f.lat)}` +
         `&longitude=${WIND_FARMS.map((f) => f.lon)}&hourly=wind_speed_100m,wind_direction_100m` +
-        `&wind_speed_unit=ms&${RANGE}`,
+        `&wind_speed_unit=ms&${range}`,
     ),
   ])
+  return { at: Math.min(marine.at, wind.at), marine: marine.body, wind: wind.body }
+}
 
-  const marine = marineEntry.body
-  const wind = windEntry.body
+export async function fetchWeather(): Promise<Weather> {
+  try {
+    return parseWeather(await fetchOpenMeteo(), 'live')
+  } catch (liveError) {
+    const res = await fetch(SNAPSHOT_URL).catch(() => null)
+    if (!res?.ok) throw liveError
+    return parseWeather((await res.json()) as OpenMeteo, 'snapshot')
+  }
+}
+
+function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']): Weather {
+  const { lats, lons } = gridCoordinates()
   const times = marine[0].hourly.time
   const currents = times.map((_, h) => {
     const frame = new Float32Array(marine.length * 2)
@@ -126,7 +153,7 @@ export async function fetchWeather(): Promise<Weather> {
     return out
   })
 
-  return { times, currents, sea, wind: windByFarm, fetchedAt: Math.min(marineEntry.at, windEntry.at) / 1000 }
+  return { times, currents, sea, wind: windByFarm, fetchedAt: at / 1000, source }
 }
 
 /** Fractional hour index of a timestamp, clamped to the available range. */

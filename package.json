@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:artifact": "tsc -b && vite build --mode artifact --outDir dist-artifact && node scripts/build-artifact.ts",
+    "snapshot:weather": "node scripts/snapshot-weather.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

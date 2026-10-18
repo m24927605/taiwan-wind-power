@@ -25,7 +25,7 @@ export const DETAIL = {
 } as const
 
 export const ELEVATION_SIZE = 1024
-export const ELEVATION_URL = '/data/taiwan-elevation.bin'
+export const ELEVATION_URL = 'data/taiwan-elevation.png'
 
 const ORIGIN_LON = (DOMAIN.west + DOMAIN.east) / 2
 const ORIGIN_LAT = (DOMAIN.south + DOMAIN.north) / 2

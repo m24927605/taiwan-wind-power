@@ -3,13 +3,14 @@ import { useThree } from '@react-three/fiber'
 import { useMemo } from 'react'
 import * as THREE from 'three'
 import { DETAIL, WORLD, worldExtent } from '../geo/domain'
+import { modelUrl } from '../modelUrl'
 import { ATMOSPHERE_GLSL, atmosphere } from './atmosphere'
 
-const TERRAIN_URL = '/models/terrain.glb'
-const IMAGERY_URL = '/textures/imagery.webp'
-const NORMALS_URL = '/textures/normals.webp'
+const TERRAIN_URL = modelUrl('terrain')
+const IMAGERY_URL = 'textures/imagery.webp'
+const NORMALS_URL = 'textures/normals.webp'
 /** 4096 x 8192 over the island: too much texture memory for phones, so desktop only. */
-const DETAIL_URL = '/textures/imagery-taiwan.webp'
+const DETAIL_URL = 'textures/imagery-taiwan.webp'
 const DETAIL_SIZE = 8192
 const COARSE_POINTER = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
 const DETAIL_WORLD = worldExtent(DETAIL)
