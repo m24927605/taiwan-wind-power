@@ -48,6 +48,13 @@ export function flyToTurbine(index: number) {
   )
 }
 
+/** Oblique view over a whole wind farm, from the south-east so the coast sits behind it. */
+export function flyToFarm(center: [x: number, z: number], radius: number) {
+  const r = radius * 2.2 + 2
+  useStore.setState({ selected: null })
+  controlsInstance?.setLookAt(center[0] + r * 0.55, r * 0.55, center[1] + r * 0.8, center[0], 0, center[1], true)
+}
+
 /** Overview camera position, pulled back on portrait screens so both coasts stay in frame. */
 export function overviewPosition(aspect: number): THREE.Vector3 {
   const pullBack = THREE.MathUtils.clamp(1.15 / aspect, 1, 2)

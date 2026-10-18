@@ -38,6 +38,10 @@ coordinates are an approximate array layout, and the UI says so.
   card that explains the part with a live reading (shaft rpm, gearbox output speed, generator
   output, converter load, nacelle heading). The side panel shows live wind, rpm, output and the
   power curve.
+- Wind farms are outlined along their array headings and labelled with turbine count and
+  capacity, so they read from the overview where turbines are specks. Labels hang off each farm's
+  western corner into the open strait; when they collide, larger farms win. Click a label to fly
+  over that farm. Outlines fade out as the camera moves in among the turbines.
 - `M` measures great-circle distance and bearing. Points snap to turbines.
 - `E` toggles engineering mode, a diagnostic render plus live renderer statistics.
 - `Space` plays or pauses the time-lapse, `R` returns to the overview, and `Esc` clears the

@@ -5,6 +5,7 @@ import { Suspense, useState } from 'react'
 import { useStore } from '../state'
 import { CameraRig } from './CameraRig'
 import { DevProbe } from './DevProbe'
+import { FarmBounds } from './FarmBounds'
 import { Interaction } from './Interaction'
 import { Kuroshio } from './Kuroshio'
 import { Measure } from './Measure'
@@ -57,6 +58,7 @@ export function Scene() {
         <WindFarms />
         <HeroTurbine />
       </Suspense>
+      <FarmBounds />
       <Interaction />
       <Measure />
       {/* MSAA only pays off below ~1.5x; at retina density the extra samples cost more than they show. */}
