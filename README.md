@@ -1,10 +1,24 @@
 # 風與潮 Wind & Tide
 
+**English** · [繁體中文](README.zh-TW.md)
+
 A live digital twin of the Taiwan Strait, built with Three.js and React Three Fiber.
 
 It opens straight onto the strait: Sentinel-2 imagery draped over the island, an FFT ocean raised by today's wave forecast,
 the Kuroshio current streaming past the east coast, and 513 offshore turbines turning to the
 wind that is blowing over the strait right now.
+
+## Film
+
+[![Wind & Tide: a two-minute film recorded from the live site](docs/teaser.webp)](https://github.com/m24927605/taiwan-wind-power/releases/tag/film-v1)
+
+Watch the two-minute film: **[English](https://github.com/m24927605/taiwan-wind-power/releases/download/film-v1/wind-and-tide-en.mp4)** ·
+**[繁體中文](https://github.com/m24927605/taiwan-wind-power/releases/download/film-v1/wind-and-tide-zh.mp4)**
+
+Every shot is the site's own real-time renderer at real dates and times from the forecast
+window: ripples at dawn, a time-lapse sunset, the moon setting into the strait at its true phase.
+Frames were captured on a virtual clock, so the film runs at 60 fps whatever the machine.
+Narration by Gemini TTS.
 
 ```bash
 npm install
@@ -265,4 +279,4 @@ rucisko, sea wind by Potapooo, gulls by steaq and Snapper4298, wind turbine by e
 
 Imagery: Sentinel-2 cloudless 2024 – https://s2maps.eu by EOX IT Services GmbH (contains modified
 Copernicus Sentinel data 2024), licensed CC BY-NC-SA 4.0. Elevation: AWS Terrain Tiles. Weather:
-Open-Meteo.
+Open-Meteo. Film narration: Gemini TTS.
