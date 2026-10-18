@@ -131,7 +131,8 @@ function createMaterial(elevation: Elevation) {
         vec3 slow = vec3(0.05, 0.30, 0.55);
         vec3 fast = vec3(0.55, 0.95, 1.0);
         vec3 col = mix(slow, fast, smoothstep(0.35, 1.2, vSpeed));
-        float gain = mix(1.6, 0.8, uDay) + uDebug;
+        // A quiet tracer by day so the sea itself reads; it glows at night and in engineering mode.
+        float gain = mix(1.5, 0.38, uDay) + uDebug * 1.2;
         gl_FragColor = vec4(col * a * gain, 1.0);
       }
     `,

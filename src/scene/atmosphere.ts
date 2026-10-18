@@ -57,7 +57,7 @@ vec3 applyFog(vec3 col, vec3 worldPos) {
   float dist = length(v);
   float fog = 1.0 - exp(-dist * 0.0011);
   // Haze thins with altitude so high orbital views stay crisp.
-  fog *= mix(1.0, 0.35, smoothstep(80.0, 500.0, uCameraPos.y));
+  fog *= mix(1.0, 0.15, smoothstep(30.0, 300.0, uCameraPos.y));
   return mix(col, skyHorizon(normalize(v)), clamp(fog, 0.0, 0.6));
 }
 

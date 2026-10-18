@@ -1031,7 +1031,7 @@ small {
 .legend {
   position: absolute;
   right: max(24px, env(safe-area-inset-right));
-  bottom: max(24px, env(safe-area-inset-bottom));
+  bottom: max(34px, calc(env(safe-area-inset-bottom) + 10px));
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1062,6 +1062,38 @@ small {
   background: var(--signal);
   box-shadow: 0 0 8px var(--signal);
   animation: blink 2s steps(1) infinite;
+}
+
+/* Required by the imagery licence, so it stays visible on every screen size. */
+.attribution {
+  position: absolute;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(6px, env(safe-area-inset-bottom));
+  max-width: calc(100vw - 24px);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  text-align: right;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  pointer-events: auto;
+}
+
+.attribution:hover {
+  color: var(--text-dim);
+}
+
+.attribution__short {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .attribution__long {
+    display: none;
+  }
+
+  .attribution__short {
+    display: inline;
+  }
 }
 
 @keyframes blink {
@@ -1113,7 +1145,7 @@ small {
     top: auto;
     right: 16px;
     left: 16px;
-    bottom: 148px;
+    bottom: 160px;
     width: auto;
     padding: 12px 14px;
   }
@@ -1128,11 +1160,17 @@ small {
   }
 
   .timeline {
+    bottom: max(30px, calc(env(safe-area-inset-bottom) + 20px));
     flex-direction: column;
     align-items: stretch;
     gap: 6px;
     width: calc(100vw - 32px);
     padding: 10px 14px;
+  }
+
+  /* In the stacked layout flex: 1 would resolve the track's height to zero. */
+  .timeline__track {
+    flex: none;
   }
 
   .toolbar {

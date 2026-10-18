@@ -12,8 +12,9 @@ export const DOMAIN = {
 export const ELEVATION_SIZE = 1024
 export const ELEVATION_URL = '/data/taiwan-elevation.bin'
 
-// Vertical exaggeration applied to terrain and bathymetry so the Central Range reads at island scale.
-export const VERTICAL_EXAGGERATION = 2.5
+// Vertical exaggeration of the terrain: enough for the Central Range to read at island scale,
+// little enough that its ridges keep their real proportions up close.
+export const VERTICAL_EXAGGERATION = 1.5
 
 const ORIGIN_LON = (DOMAIN.west + DOMAIN.east) / 2
 const ORIGIN_LAT = (DOMAIN.south + DOMAIN.north) / 2

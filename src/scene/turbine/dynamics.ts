@@ -1,10 +1,12 @@
 import { WIND_FARMS } from '../../data/windfarms'
 import { windAt, type Weather } from '../../data/weather'
-import { VERTICAL_EXAGGERATION } from '../../geo/domain'
 import { TURBINE, powerAt, rpmAt } from './spec'
 
-/** Metres in the GLB to world units, with the same exaggeration as the terrain. */
-export const TURBINE_SCALE = 0.001 * VERTICAL_EXAGGERATION
+/** Turbines are drawn 2.5x life size so the arrays stay legible from the overview. */
+const TURBINE_EXAGGERATION = 2.5
+
+/** Metres in the GLB to world units (km). */
+export const TURBINE_SCALE = 0.001 * TURBINE_EXAGGERATION
 
 const n = WIND_FARMS.length
 

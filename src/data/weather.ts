@@ -1,8 +1,9 @@
 import { DOMAIN } from '../geo/domain'
 import { WIND_FARMS } from './windfarms'
 
-// Live hourly ocean currents (Open-Meteo Marine) on a grid over the domain, and hub-height
-// wind (Open-Meteo Forecast, 100 m) at every wind farm, from yesterday through three days ahead.
+// Live hourly ocean currents and sea state (Open-Meteo Marine) on a grid over the domain, and
+// hub-height wind (Open-Meteo Forecast, 100 m) at every wind farm, from yesterday through three
+// days ahead.
 
 export const CURRENT_GRID = { cols: 14, rows: 14 } as const
 
@@ -11,11 +12,16 @@ export interface Weather {
   times: number[]
   /** Per hour: eastward/northward current in m/s, interleaved, row 0 at the north edge. */
   currents: Float32Array[]
+  /** Strait sea state per hour: [significant height m, mean period s, direction-from degrees]. */
+  sea: Float32Array
   /** Per farm: [speed m/s, direction-from degrees] per hour, interleaved. */
   wind: Float32Array[]
   /** When the data was retrieved from Open-Meteo, unix seconds. */
   fetchedAt: number
 }
+
+// Sea state is taken as the median over grid points inside the strait, where the farms are.
+const STRAIT = { west: 119.2, east: 120.6, south: 22.6, north: 25.2 }
 
 const RANGE = 'past_days=1&forecast_days=3&timeformat=unixtime'
 
@@ -63,10 +69,11 @@ async function getJson<T>(url: string): Promise<{ at: number; body: T }> {
 
 export async function fetchWeather(): Promise<Weather> {
   const { lats, lons } = gridCoordinates()
+  type MarineVariable = 'ocean_current_velocity' | 'ocean_current_direction' | 'wave_height' | 'wave_period' | 'wave_direction'
   const [marineEntry, windEntry] = await Promise.all([
-    getJson<Hourly<'ocean_current_velocity' | 'ocean_current_direction'>[]>(
+    getJson<Hourly<MarineVariable>[]>(
       `https://marine-api.open-meteo.com/v1/marine?latitude=${lats}&longitude=${lons}` +
-        `&hourly=ocean_current_velocity,ocean_current_direction&${RANGE}`,
+        `&hourly=ocean_current_velocity,ocean_current_direction,wave_height,wave_period,wave_direction&${RANGE}`,
     ),
     getJson<Hourly<'wind_speed_100m' | 'wind_direction_100m'>[]>(
       `https://api.open-meteo.com/v1/forecast?latitude=${WIND_FARMS.map((f) => f.lat)}` +
@@ -90,6 +97,24 @@ export async function fetchWeather(): Promise<Weather> {
     return frame
   })
 
+  const strait = marine.filter((_, i) => {
+    const lat = lats[i]
+    const lon = lons[i]
+    return lon >= STRAIT.west && lon <= STRAIT.east && lat >= STRAIT.south && lat <= STRAIT.north
+  })
+  const median = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)]
+  const sea = new Float32Array(times.length * 3)
+  times.forEach((_, h) => {
+    const valid = strait.filter((p) => p.hourly.wave_height[h] !== null && p.hourly.wave_period[h] !== null)
+    if (valid.length === 0) return
+    sea[h * 3] = median(valid.map((p) => p.hourly.wave_height[h]!))
+    sea[h * 3 + 1] = median(valid.map((p) => p.hourly.wave_period[h]!))
+    // Average directions as unit vectors so they wrap through north.
+    const x = valid.reduce((acc, p) => acc + Math.sin(((p.hourly.wave_direction[h] ?? 0) * Math.PI) / 180), 0)
+    const y = valid.reduce((acc, p) => acc + Math.cos(((p.hourly.wave_direction[h] ?? 0) * Math.PI) / 180), 0)
+    sea[h * 3 + 2] = (Math.atan2(x, y) * 180) / Math.PI
+  })
+
   const windByFarm = wind.map((farm) => {
     const byTime = new Map(farm.hourly.time.map((t, i) => [t, i]))
     const out = new Float32Array(times.length * 2)
@@ -101,7 +126,7 @@ export async function fetchWeather(): Promise<Weather> {
     return out
   })
 
-  return { times, currents, wind: windByFarm, fetchedAt: Math.min(marineEntry.at, windEntry.at) / 1000 }
+  return { times, currents, sea, wind: windByFarm, fetchedAt: Math.min(marineEntry.at, windEntry.at) / 1000 }
 }
 
 /** Fractional hour index of a timestamp, clamped to the available range. */
@@ -129,4 +154,19 @@ export function windAt(weather: Weather, farm: number, t: number): { speed: numb
   const y = ay + (by - ay) * k
   const speed = w[i * 2] + (w[j * 2] - w[i * 2]) * k
   return { speed, fromRad: Math.atan2(x, y) }
+}
+
+/** Interpolated strait sea state: significant height m, mean period s, direction-from radians. */
+export function seaAt(weather: Weather, t: number): { hs: number; tm: number; fromRad: number } {
+  const f = hourIndex(weather, t)
+  const i = Math.floor(f)
+  const j = Math.min(i + 1, weather.times.length - 1)
+  const k = f - i
+  const s = weather.sea
+  const lerp = (o: number) => s[i * 3 + o] + (s[j * 3 + o] - s[i * 3 + o]) * k
+  const a = (s[i * 3 + 2] * Math.PI) / 180
+  const b = (s[j * 3 + 2] * Math.PI) / 180
+  const x = Math.sin(a) * (1 - k) + Math.sin(b) * k
+  const y = Math.cos(a) * (1 - k) + Math.cos(b) * k
+  return { hs: lerp(0), tm: lerp(1), fromRad: Math.atan2(x, y) }
 }
