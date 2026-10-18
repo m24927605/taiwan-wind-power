@@ -19,8 +19,8 @@ npm run build
 | Layer | Source | Notes |
 | --- | --- | --- |
 | Bathymetry | AWS Terrain Tiles (Terrarium, z9) | Baked by `scripts/build-elevation.ts` into a 1024² Int16 grid (2 MB) |
-| Land surface | AWS Terrain Tiles (Terrarium, z11) | Baked by `scripts/build-terrain.ts` into a simplified 330k-triangle GLB (1 MB) |
-| Land imagery | Sentinel-2 cloudless 2024, EOX | Baked by `scripts/build-imagery.ts` into a 4096² WebP (1.3 MB) plus a 2048² normal map |
+| Land surface | AWS Terrain Tiles (Terrarium, z11) | Baked by `scripts/build-terrain.ts` into a simplified 615k-triangle GLB (1.8 MB), true scale |
+| Land imagery | Sentinel-2 cloudless 2024, EOX | Baked by `scripts/build-imagery.ts` into a 4096² WebP over the domain (1.2 MB), a 4096 × 8192 WebP over the island (4.2 MB, desktop only) and a 4096² normal map |
 | Ocean currents | Open-Meteo Marine API | 14 × 14 grid over the domain, hourly, yesterday through three days ahead |
 | Sea state | Open-Meteo Marine API | Wave height, period and direction, median over the strait; drives the wave spectrum |
 | Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm and output |
@@ -125,13 +125,25 @@ close.
 **One elevation texture, many uses.** A single R16F texture provides ocean depth colouring,
 isobaths, surf, the particle land mask and the intro engraving.
 
-**Terrain as an asset.** The land mesh starts as a 2048² z11 grid cut down to the cells that
-touch land (1.76M triangles). meshoptimizer then simplifies it to an absolute error of 40 m, so
-plains collapse to a few large triangles while ridgelines keep their detail: 330k triangles,
-quantized and meshopt-compressed to 1 MB. Shading comes from the Sentinel-2 drape and a
-2048² normal map, with part of the imagery's baked 10:30 sun divided out before the scene sun is
-applied. Night lights are not hand-placed: they come from pixels that are bright, grey and flat
+**Terrain as an asset.** The land is modelled at true scale, with no vertical exaggeration. The
+mesh starts as a 2048² z11 grid cut down to the cells that touch land (1.76M triangles).
+meshoptimizer then simplifies it to an absolute error of 25 m, below the source grid spacing, so
+plains collapse to a few large triangles while ridgelines keep their detail: 615k triangles,
+quantized and meshopt-compressed to 1.8 MB. Shading comes from the Sentinel-2 drape and a 4096²
+normal map, with part of the imagery's baked 10:30 sun divided out before the scene sun is
+applied. The island gets its own z12 drape at about 50 m per texel, faded in at the edge of its
+box; phones and GPUs without 8192 textures keep the 110 m domain drape. Night lights are not hand-placed: they come from pixels that are bright, grey and flat
 in the imagery, which is the real urban fabric.
+
+**Aerial perspective.** Haze density falls off exponentially with height (1.2 km scale height),
+and the fog integrates it along each view ray in closed form. Ridges therefore fade into blue
+layers with distance, the horizon at sea level dissolves into the sky, and the overview, which
+looks down through thin air, stays crisp without any altitude special case.
+
+**Lighting the turbines.** The live sky is filtered into a PMREM environment map whenever the sun
+moves, with open sea in the lower hemisphere, so semi-matte paint picks up skylight instead of
+reading as flat plastic. The selected turbine also casts soft sun shadows from a frustum that
+hugs it.
 
 **Depth precision across a 1000× zoom.** The camera's near plane follows its altitude, from 4 m
 at a nacelle to 5 km in orbit. This avoids a logarithmic depth buffer and the shader cost that

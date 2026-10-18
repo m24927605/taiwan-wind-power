@@ -52,13 +52,25 @@ vec3 skyColor(vec3 dir) {
   return mix(skyHorizon(dir), zenith, t);
 }
 
+// Aerial perspective. Haze density falls off exponentially with height, so the optical depth
+// along a ray from altitude y0 to y1 over distance d is β·d·H·(e^(-y0/H) - e^(-y1/H)) / (y1 - y0):
+// distant ridges fade into the horizon colour while views from orbit look down through thin air.
+const float HAZE_EXTINCTION = 0.04; // per km at sea level: about 100 km visibility
+const float HAZE_SCALE_HEIGHT = 1.2; // km
+
 vec3 applyFog(vec3 col, vec3 worldPos) {
   vec3 v = worldPos - uCameraPos;
   float dist = length(v);
-  float fog = 1.0 - exp(-dist * 0.0011);
-  // Haze thins with altitude so high orbital views stay crisp.
-  fog *= mix(1.0, 0.15, smoothstep(30.0, 300.0, uCameraPos.y));
-  return mix(col, skyHorizon(normalize(v)), clamp(fog, 0.0, 0.6));
+  float y0 = max(uCameraPos.y, 0.0);
+  float y1 = max(worldPos.y, 0.0);
+  float dy = y1 - y0;
+  float e0 = exp(-y0 / HAZE_SCALE_HEIGHT);
+  float density = abs(dy) < 1e-3 ? e0 : HAZE_SCALE_HEIGHT * (e0 - exp(-y1 / HAZE_SCALE_HEIGHT)) / dy;
+  float fog = 1.0 - exp(-HAZE_EXTINCTION * dist * density);
+  vec3 dir = v / max(dist, 1e-4);
+  // Forward scattering brightens the haze toward the sun.
+  vec3 haze = skyHorizon(dir) + sunColor() * pow(max(dot(dir, uSunDir), 0.0), 8.0) * 0.25 * uDay;
+  return mix(col, haze, fog);
 }
 
 float hash12(vec2 p) {

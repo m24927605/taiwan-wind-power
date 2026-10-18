@@ -2,12 +2,17 @@ import { useGLTF, useTexture } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { useMemo } from 'react'
 import * as THREE from 'three'
-import { VERTICAL_EXAGGERATION, WORLD } from '../geo/domain'
+import { DETAIL, WORLD, worldExtent } from '../geo/domain'
 import { ATMOSPHERE_GLSL, atmosphere } from './atmosphere'
 
 const TERRAIN_URL = '/models/terrain.glb'
 const IMAGERY_URL = '/textures/imagery.webp'
 const NORMALS_URL = '/textures/normals.webp'
+/** 4096 x 8192 over the island: too much texture memory for phones, so desktop only. */
+const DETAIL_URL = '/textures/imagery-taiwan.webp'
+const DETAIL_SIZE = 8192
+const COARSE_POINTER = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
+const DETAIL_WORLD = worldExtent(DETAIL)
 /** Matches scripts/build-terrain.ts: land is lifted this far above the ocean plane. */
 const LAND_LIFT_KM = 0.004
 
@@ -15,13 +20,16 @@ const LAND_LIFT_KM = 0.004
 // south-south-east. Part of that baked shading is divided out before the scene sun is applied.
 const CAPTURE_SUN = new THREE.Vector3(0.369, 0.766, 0.527).normalize()
 
-function createMaterial(imagery: THREE.Texture, normals: THREE.Texture) {
+function createMaterial(imagery: THREE.Texture, normals: THREE.Texture, detail: THREE.Texture | undefined) {
   return new THREE.ShaderMaterial({
+    defines: detail ? { DETAIL: '' } : {},
     uniforms: {
       ...atmosphere,
       uImagery: { value: imagery },
       uNormals: { value: normals },
+      uDetail: { value: detail ?? null },
       uDomain: { value: new THREE.Vector4(WORLD.minX, WORLD.minZ, WORLD.width, WORLD.depth) },
+      uDetailRect: { value: new THREE.Vector4(DETAIL_WORLD.minX, DETAIL_WORLD.minZ, DETAIL_WORLD.width, DETAIL_WORLD.depth) },
       uCaptureSun: { value: CAPTURE_SUN },
     },
     vertexShader: /* glsl */ `
@@ -31,7 +39,7 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture) {
         // The GLB is quantized; the model matrix carries the dequantization.
         vec4 world = modelMatrix * vec4(position, 1.0);
         vWorld = world.xyz;
-        vElev = max(world.y - ${LAND_LIFT_KM.toFixed(4)}, 0.0) * ${(1000 / VERTICAL_EXAGGERATION).toFixed(4)};
+        vElev = max(world.y - ${LAND_LIFT_KM.toFixed(4)}, 0.0) * 1000.0;
         gl_Position = projectionMatrix * viewMatrix * world;
       }
     `,
@@ -39,7 +47,9 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture) {
       ${ATMOSPHERE_GLSL}
       uniform sampler2D uImagery;
       uniform sampler2D uNormals;
+      uniform sampler2D uDetail;
       uniform vec4 uDomain;
+      uniform vec4 uDetailRect;
       uniform vec3 uCaptureSun;
       varying vec3 vWorld;
       varying float vElev;
@@ -58,6 +68,12 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture) {
         float h = vElev;
 
         vec3 albedo = texture2D(uImagery, uv).rgb;
+        #ifdef DETAIL
+        // Sharper imagery over the island, faded in from the edge of its box.
+        vec2 duv = (vWorld.xz - uDetailRect.xy) / uDetailRect.zw;
+        vec2 edge = min(duv, 1.0 - duv);
+        albedo = mix(albedo, texture2D(uDetail, duv).rgb, smoothstep(0.0, 0.01, min(edge.x, edge.y)));
+        #endif
         float baked = clamp(dot(n, uCaptureSun) / uCaptureSun.y, 0.35, 1.25);
         albedo /= mix(1.0, baked, 0.8);
 
@@ -91,14 +107,19 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture) {
 export function Terrain() {
   const gl = useThree((s) => s.gl)
   const { scene } = useGLTF(TERRAIN_URL)
-  const [imagery, normals] = useTexture([IMAGERY_URL, NORMALS_URL], ([color, normal]) => {
-    for (const t of [color, normal]) {
-      t.flipY = false
-      t.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
-    }
-    color.colorSpace = THREE.SRGBColorSpace
-  })
-  const material = useMemo(() => createMaterial(imagery, normals), [imagery, normals])
+  const withDetail = !COARSE_POINTER && gl.capabilities.maxTextureSize >= DETAIL_SIZE
+  const [imagery, normals, detail] = useTexture(
+    withDetail ? [IMAGERY_URL, NORMALS_URL, DETAIL_URL] : [IMAGERY_URL, NORMALS_URL],
+    (textures) => {
+      for (const t of textures) {
+        t.flipY = false
+        t.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
+      }
+      textures[0].colorSpace = THREE.SRGBColorSpace
+      if (textures[2]) textures[2].colorSpace = THREE.SRGBColorSpace
+    },
+  )
+  const material = useMemo(() => createMaterial(imagery, normals, detail), [imagery, normals, detail])
   const model = useMemo(() => {
     let m: THREE.Mesh | undefined
     scene.traverse((o) => {

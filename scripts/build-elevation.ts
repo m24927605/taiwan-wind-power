@@ -4,8 +4,8 @@
 // Source: AWS Terrain Tiles (Terrarium encoding), which includes bathymetry.
 
 import { mkdir, writeFile } from 'node:fs/promises'
-import { ELEVATION_SIZE } from '../src/geo/domain.ts'
-import { fetchMosaic, forEachDomainSample, terrarium } from './tiles.ts'
+import { DOMAIN, ELEVATION_SIZE } from '../src/geo/domain.ts'
+import { fetchMosaic, forEachSample, terrarium } from './tiles.ts'
 
 const ZOOM = 9
 
@@ -14,7 +14,7 @@ const out = new Int16Array(ELEVATION_SIZE * ELEVATION_SIZE)
 const sample = new Float32Array(1)
 let min = Infinity
 let max = -Infinity
-forEachDomainSample(ELEVATION_SIZE, (i, j, lon, lat) => {
+forEachSample(DOMAIN, ELEVATION_SIZE, ELEVATION_SIZE, (i, j, lon, lat) => {
   mosaic.sample(lon, lat, sample)
   const h = Math.round(sample[0])
   out[j * ELEVATION_SIZE + i] = h

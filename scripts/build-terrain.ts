@@ -1,5 +1,4 @@
-// Builds public/models/terrain.glb: the land surface of DOMAIN in world units (km, with the
-// scene's vertical exaggeration). A z11 elevation grid is cut down to the cells that touch land,
+// Builds public/models/terrain.glb: the land surface of DOMAIN in world units (km, true scale). A z11 elevation grid is cut down to the cells that touch land,
 // then simplified by meshoptimizer to a fixed geometric error, so plains collapse to a few large
 // triangles while the Central Range keeps its ridgelines. Shading comes from the imagery and
 // normal textures, so the mesh carries positions only.
@@ -9,8 +8,8 @@ import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extension
 import { quantize, reorder } from '@gltf-transform/functions'
 import { MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer'
 import { mkdir } from 'node:fs/promises'
-import { VERTICAL_EXAGGERATION, WORLD } from '../src/geo/domain.ts'
-import { fetchMosaic, forEachDomainSample, terrarium } from './tiles.ts'
+import { DOMAIN, WORLD } from '../src/geo/domain.ts'
+import { fetchMosaic, forEachSample, terrarium } from './tiles.ts'
 
 const ZOOM = 11
 const GRID = 2048
@@ -19,13 +18,13 @@ const EDGE_TAPER = 0.035
 /** Land sits a hair above the ocean plane; sea vertices of coastal cells sit below it. */
 const LAND_LIFT_KM = 0.004
 const SEA_DROP_KM = 0.02
-/** Simplification error: 40 m of real relief, in exaggerated world units. */
-const MAX_ERROR_KM = (40 * VERTICAL_EXAGGERATION) / 1000
+/** Simplification error: 25 m, below the ~75 m spacing of the z11 source grid. */
+const MAX_ERROR_KM = 0.025
 
 const elevation = await fetchMosaic(ZOOM, terrarium.url(ZOOM), 1, terrarium.decode)
 const sample = new Float32Array(1)
 const heights = new Float32Array(GRID * GRID)
-forEachDomainSample(GRID, (i, j, lon, lat) => {
+forEachSample(DOMAIN, GRID, GRID, (i, j, lon, lat) => {
   elevation.sample(lon, lat, sample)
   const u = i / (GRID - 1)
   const v = j / (GRID - 1)
@@ -46,7 +45,7 @@ const vertex = (k: number) => {
     const h = heights[k]
     positions.push(
       WORLD.minX + (i / (GRID - 1)) * WORLD.width,
-      h > 0 ? (h * VERTICAL_EXAGGERATION) / 1000 + LAND_LIFT_KM : -SEA_DROP_KM,
+      h > 0 ? h / 1000 + LAND_LIFT_KM : -SEA_DROP_KM,
       WORLD.minZ + (j / (GRID - 1)) * WORLD.depth,
     )
   }

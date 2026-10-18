@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import type { Elevation } from '../data/elevation'
 import { TURBINES } from '../data/windfarms'
-import { VERTICAL_EXAGGERATION } from '../geo/domain'
 import { TURBINE } from './turbine/spec'
 import { TURBINE_SCALE } from './turbine/dynamics'
 
@@ -39,7 +38,7 @@ export function pickGround(ray: THREE.Ray, elevation: Elevation): THREE.Vector3 
   const tSea = -ray.origin.y / ray.direction.y
   const steps = 160
   const p = new THREE.Vector3()
-  const surface = (q: THREE.Vector3) => (Math.max(elevation.heightAt(q.x, q.z), 0) * VERTICAL_EXAGGERATION) / 1000
+  const surface = (q: THREE.Vector3) => Math.max(elevation.heightAt(q.x, q.z), 0) / 1000
   let prev = 0
   for (let i = 1; i <= steps; i++) {
     const t = (tSea * i) / steps

@@ -1,8 +1,8 @@
-// Fetches a Web Mercator tile mosaic covering DOMAIN and resamples it onto the scene's
+// Fetches a Web Mercator tile mosaic covering a lon/lat box and resamples it onto the scene's
 // equirectangular grid (row 0 at the north edge, corner-aligned samples).
 
 import sharp from 'sharp'
-import { DOMAIN } from '../src/geo/domain.ts'
+import { DOMAIN, type Bounds } from '../src/geo/domain.ts'
 
 const TILE = 256
 const CONCURRENCY = 8
@@ -12,15 +12,19 @@ export interface Mosaic {
   sample(lon: number, lat: number, out: Float32Array): void
 }
 
+type Store = Float32Array | Uint8Array
+
 /**
- * @param url   tile URL for x, y at `zoom`
- * @param decode converts one tile's raw RGB bytes into `channels` floats per pixel
+ * @param url    tile URL for x, y at `zoom`
+ * @param decode converts one tile's raw RGB bytes into `channels` values per pixel
+ * @param bytes  store values as bytes (imagery) instead of floats (elevation)
  */
 export async function fetchMosaic(
   zoom: number,
   url: (x: number, y: number) => string,
   channels: number,
-  decode: (rgb: Buffer, out: Float32Array, offset: number, pixel: number) => void,
+  decode: (rgb: Buffer, out: Store, offset: number, pixel: number) => void,
+  { bounds = DOMAIN, bytes = false }: { bounds?: Bounds; bytes?: boolean } = {},
 ): Promise<Mosaic> {
   const worldPx = TILE * 2 ** zoom
   const lonToPx = (lon: number) => ((lon + 180) / 360) * worldPx
@@ -28,15 +32,15 @@ export async function fetchMosaic(
     const r = (lat * Math.PI) / 180
     return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * worldPx
   }
-  const tx0 = Math.floor(lonToPx(DOMAIN.west) / TILE)
-  const tx1 = Math.floor(lonToPx(DOMAIN.east) / TILE)
-  const ty0 = Math.floor(latToPx(DOMAIN.north) / TILE)
-  const ty1 = Math.floor(latToPx(DOMAIN.south) / TILE)
+  const tx0 = Math.floor(lonToPx(bounds.west) / TILE)
+  const tx1 = Math.floor(lonToPx(bounds.east) / TILE)
+  const ty0 = Math.floor(latToPx(bounds.north) / TILE)
+  const ty1 = Math.floor(latToPx(bounds.south) / TILE)
   const cols = tx1 - tx0 + 1
   const rows = ty1 - ty0 + 1
   const width = cols * TILE
   const height = rows * TILE
-  const data = new Float32Array(width * height * channels)
+  const data = bytes ? new Uint8Array(width * height * channels) : new Float32Array(width * height * channels)
 
   console.log(`fetching ${cols * rows} tiles at z${zoom}`)
   const queue = Array.from({ length: cols * rows }, (_, k) => k)
@@ -85,12 +89,17 @@ export async function fetchMosaic(
   }
 }
 
-/** Calls `fn` for every sample of a size x size grid over DOMAIN. */
-export function forEachDomainSample(size: number, fn: (i: number, j: number, lon: number, lat: number) => void) {
-  for (let j = 0; j < size; j++) {
-    const lat = DOMAIN.north - (j / (size - 1)) * (DOMAIN.north - DOMAIN.south)
-    for (let i = 0; i < size; i++) {
-      fn(i, j, DOMAIN.west + (i / (size - 1)) * (DOMAIN.east - DOMAIN.west), lat)
+/** Calls `fn` for every sample of a width x height grid over a lon/lat box. */
+export function forEachSample(
+  bounds: Bounds,
+  width: number,
+  height: number,
+  fn: (i: number, j: number, lon: number, lat: number) => void,
+) {
+  for (let j = 0; j < height; j++) {
+    const lat = bounds.north - (j / (height - 1)) * (bounds.north - bounds.south)
+    for (let i = 0; i < width; i++) {
+      fn(i, j, bounds.west + (i / (width - 1)) * (bounds.east - bounds.west), lat)
     }
   }
 }
@@ -99,7 +108,7 @@ export function forEachDomainSample(size: number, fn: (i: number, j: number, lon
 export const terrarium = {
   url: (zoom: number) => (x: number, y: number) =>
     `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zoom}/${x}/${y}.png`,
-  decode: (rgb: Buffer, out: Float32Array, offset: number, pixel: number) => {
+  decode: (rgb: Buffer, out: Store, offset: number, pixel: number) => {
     const s = pixel * 3
     out[offset] = rgb[s] * 256 + rgb[s + 1] + rgb[s + 2] / 256 - 32768
   },

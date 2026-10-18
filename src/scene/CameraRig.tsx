@@ -39,7 +39,7 @@ export function CameraRig() {
   // Keep depth precision across a 1000x zoom range by tying the near plane to altitude.
   useFrame(() => {
     const elevation = useStore.getState().elevation
-    const ground = elevation ? Math.max(0, elevation.heightAt(camera.position.x, camera.position.z) * 0.0025) : 0
+    const ground = elevation ? Math.max(0, elevation.heightAt(camera.position.x, camera.position.z) / 1000) : 0
     const altitude = Math.max(camera.position.y - ground, 0.01)
     const near = THREE.MathUtils.clamp(altitude * 0.05, 0.004, 5)
     if (Math.abs(near - camera.near) / camera.near > 0.1) {
