@@ -104,10 +104,11 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture, detail: 
   })
 }
 
-export function Terrain() {
+/** @param detail drape the island with its sharper imagery where the device can hold it */
+export function Terrain({ detail: wantDetail }: { detail: boolean }) {
   const gl = useThree((s) => s.gl)
   const { scene } = useGLTF(TERRAIN_URL)
-  const withDetail = !COARSE_POINTER && gl.capabilities.maxTextureSize >= DETAIL_SIZE
+  const withDetail = wantDetail && !COARSE_POINTER && gl.capabilities.maxTextureSize >= DETAIL_SIZE
   const [imagery, normals, detail] = useTexture(
     withDetail ? [IMAGERY_URL, NORMALS_URL, DETAIL_URL] : [IMAGERY_URL, NORMALS_URL],
     (textures) => {

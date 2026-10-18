@@ -1,13 +1,14 @@
 import { PerformanceMonitor } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing'
-import { Suspense, useState } from 'react'
+import { useState } from 'react'
 import { useStore } from '../state'
 import { CameraRig } from './CameraRig'
 import { DevProbe } from './DevProbe'
 import { FarmBounds } from './FarmBounds'
 import { Interaction } from './Interaction'
 import { Kuroshio } from './Kuroshio'
+import { Layer } from './Layer'
 import { Measure } from './Measure'
 import { Ocean } from './ocean/Ocean'
 import { SceneClock } from './SceneClock'
@@ -52,14 +53,24 @@ export function Scene() {
       <Sky />
       <SkyEnvironment />
       {elevation && <Ocean elevation={elevation} waveResolution={WAVE_RESOLUTION} />}
-      <Suspense fallback={null}>
-        <Terrain />
-      </Suspense>
+      {/* Without the island drape the terrain still renders with the domain imagery. */}
+      <Layer
+        name="terrain"
+        fallback={
+          <Layer name="terrain (domain imagery)">
+            <Terrain detail={false} />
+          </Layer>
+        }
+      >
+        <Terrain detail />
+      </Layer>
       {elevation && weather && <Kuroshio elevation={elevation} weather={weather} size={PARTICLE_SIZE} />}
-      <Suspense fallback={null}>
+      <Layer name="wind farms">
         <WindFarms />
+      </Layer>
+      <Layer name="hero turbine">
         <HeroTurbine />
-      </Suspense>
+      </Layer>
       <FarmBounds />
       <Interaction />
       <Measure />

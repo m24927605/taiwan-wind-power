@@ -65,6 +65,7 @@ src/
   scene/            R3F scene: sky, terrain, Kuroshio GPGPU, wind farms, hero turbine
     ocean/            FFT wave simulation and ocean shading
     camera.ts         imperative camera API (fly to turbine, farm, overview)
+    Layer.tsx         error + Suspense boundary per asset-loading part of the scene
     farmAreas.ts      farm outlines derived from the layout, and analytic farm picking
     turbine/          GLB access, per-farm dynamics, instanced LOD, cutaway hero
   intro/            inkstone polishing intro
@@ -144,6 +145,11 @@ looks down through thin air, stays crisp without any altitude special case.
 moves, with open sea in the lower hemisphere, so semi-matte paint picks up skylight instead of
 reading as flat plastic. The selected turbine also casts soft sun shadows from a frustum that
 hugs it.
+
+**Failure isolation.** Each part of the scene that loads its own assets sits in a `Layer`: an
+error boundary around a Suspense boundary. A missing or broken file costs that layer, not the
+canvas. The terrain degrades in steps: without the island drape it falls back to the domain
+imagery.
 
 **Depth precision across a 1000× zoom.** The camera's near plane follows its altitude, from 4 m
 at a nacelle to 5 km in orbit. This avoids a logarithmic depth buffer and the shader cost that
