@@ -20,9 +20,10 @@ npm run build
 | Land surface | AWS Terrain Tiles (Terrarium, z11) | Baked by `scripts/build-terrain.ts` into a simplified 615k-triangle GLB (1.8 MB), true scale |
 | Land imagery | Sentinel-2 cloudless 2024, EOX | Baked by `scripts/build-imagery.ts` into a 4096² WebP over the domain (1.2 MB), a 4096 × 8192 WebP over the island (4.2 MB, desktop only) and a 4096² normal map |
 | Ocean currents | Open-Meteo Marine API | 14 × 14 grid over the domain, hourly, yesterday through three days ahead |
-| Sea state | Open-Meteo Marine API | Wave height, period and direction, median over the strait; drives the wave spectrum |
-| Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm and output |
-| Sun and sky | NOAA solar position | Day, dusk and night follow the scene clock |
+| Sea state | Open-Meteo Marine API | Wind sea and swell (height, period, direction), each a median over the strait; the two peaks of the wave spectrum |
+| Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm, output, whitecaps and cloud drift |
+| Cloud cover | Open-Meteo Forecast API | Low and high cloud over the farms; cumulus and cirrus cover |
+| Sun, moon and sky | Solar and lunar positions | Day, dusk and moonlit night (at the real phase) follow the scene clock |
 
 The timeline scrubs across the full 96-hour window, and the play button runs it as a time-lapse.
 Turbine output comes from a cubic power curve (cut-in 3 m/s, rated 12 m/s, cut-out 25 m/s),
@@ -78,11 +79,9 @@ at UI rate. The render loop does not allocate.
 
 ## Performance notes
 
-Measured on an Apple M1 in Chrome at 1440 × 650 CSS px: about 55 fps at DPR 2 and a steady
-60 fps at DPR 1.5, where adaptive quality settles. About 460k triangles, 65k particles, 10 scene
-draw calls, 18 wave-simulation passes and post-processing. At DPR 2 an empty scene with only
-post-processing already runs at about 56 fps on this machine, so the fill rate of the composer
-sets the ceiling, not the scene content.
+Measured in headless Chrome on an Apple M1 at 1440 × 800, DPR 1: 60 fps beside a turbine and
+about 53 fps in the overview with clouds over the island; adaptive quality takes it from there.
+Volumetric clouds, the per-pixel atmosphere and the sea are the bulk of the frame.
 
 **513 turbines in four draw calls.** Every turbine is an instance. Each LOD level has two
 `InstancedMesh`es, body and rotor. Yaw and rotor spin happen in the vertex shader from per-farm
@@ -91,29 +90,43 @@ third frame the CPU re-buckets turbines by frustum (sphere test) and distance:
 
 | Bucket | Range | Geometry |
 | --- | --- | --- |
-| LOD0 | < 7 km | full mesh, about 7.4k triangles |
-| LOD1 | 7–70 km | meshoptimizer-simplified, about 1.5k triangles |
+| LOD0 | < 7 km | full mesh, about 16k triangles |
+| LOD1 | 7–70 km | meshoptimizer-simplified, about 6k triangles |
 | LOD2 | > 70 km or culled | one point (aviation light at night) |
 
 In the overview, all 513 turbines collapse into a single `Points` draw.
 
-**Asset pipeline.** The turbine is modelled procedurally and exported through glTF-Transform:
-`reorder` for vertex-cache locality, `quantize` (KHR_mesh_quantization: 14-bit positions, 10-bit
-normals, 8-bit colours) and `EXT_meshopt_compression`. The result is a 92 KB GLB for six meshes
-including both LODs. At load time the dequantization transform is baked back into float geometry
-for instancing.
+**Asset pipeline.** The turbine is modelled procedurally after the medium-speed machines in the
+strait (V164/V174 family): four-legged jacket, yellow transition piece with a railed platform,
+boat landing and davit, a three-section tower with flanges, a long nacelle with a rooftop cooler
+and a helicopter hoisting deck, and 81 m prebent blades. Every vertex carries its albedo, a
+surface (roughness, metalness, how much it weathers) and an ambient occlusion term ray-traced at
+build time with three-mesh-bvh. glTF-Transform then applies `reorder`, `quantize`
+(KHR_mesh_quantization) and `EXT_meshopt_compression`: 243 KB for six meshes including both
+LODs. At load time the dequantization transform is baked back into float geometry for
+instancing.
 
-**FFT ocean.** The sea surface is a Tessendorf ocean. A directional JONSWAP spectrum, with
-Hasselmann spreading and its height normalised to the live significant wave height, is evolved
-in time and transformed to the spatial domain by a radix-2 Stockham FFT in fragment shaders.
-Three cascades (512 m, 97 m and 17 m tiles, hand-over at six fundamentals) share one 768 × 256
-atlas, so the whole simulation is 1 + 16 + 1 full-screen passes. One half-float target carries
-four packed real fields (two slopes and two displacement derivatives for the foam Jacobian),
-which keeps the FFT at a quarter of the bandwidth of a two-target float32 version. A resolve
-pass writes each cascade into a mipmapped texture of (slope, slope², Jacobian). Mip filtering
-then gives the mean slope and, from the second moment, the slope variance that was averaged
-away. The shader feeds that variance into a Beckmann specular term, so distant water roughens
-into a realistic sun glitter instead of turning into a mirror or shimmering.
+**Painted steel without textures.** The turbine material is MeshPhysicalMaterial patched in
+`onBeforeCompile` (`turbine/weathering.ts`): roughness, metalness and occlusion come from the
+vertices, and a gloss clearcoat over the paint mirrors the sky and horizon down the tower, which
+is what makes painted steel read as steel. Wear is added in model space so it stays put as the
+nacelle yaws and the rotor turns: tone variation, rain streaks on vertical faces, rust weeping
+down the yellow steel, algae and salt in the splash zone, and the seams between nacelle panels.
+
+**FFT ocean.** The sea surface is a Tessendorf ocean. A two-peak spectrum, the live wind sea
+(JONSWAP with Hasselmann spreading) plus the live swell (narrow and long-crested), is evolved in
+time and transformed to the spatial domain by a radix-2 Stockham FFT in fragment shaders. Three
+cascades (512 m, 97 m and 17 m tiles, hand-over at six fundamentals) share one 768 × 256 atlas;
+two half-float targets carry eight packed real fields (choppy displacement, height, slopes and
+the Jacobian's derivatives), so the simulation is 1 + 16 + 2 passes. One resolve writes each
+cascade's displacement for the vertex shader, which moves a camera-centred radial grid (rings
+spaced in proportion to their radius, about 10 m apart under the eye and out past the domain)
+at the mip matching its spacing. Another writes mipmapped (slope, slope², foam): mip filtering
+keeps the slope variance that distance averages away for the Beckmann glitter, and foam is
+injected where the surface folds and decays over seconds, so whitecaps leave trails. Breaking
+crests come from the combined Jacobian of all cascades. Waves are drawn at the turbines'
+exaggeration, so a close-up keeps the proportions of waves to jacket legs, and they lie down in
+the shallows so they never climb the coast.
 
 **Kuroshio on the GPU.** Particle state (domain uv, age, lifetime) ping-pongs between RGBA32F
 render targets in `GPUComputationRenderer`. The current field is a 14 × 14 RG16F texture with
@@ -123,7 +136,7 @@ current speed and camera distance, so they read as flow in the overview and as s
 close.
 
 **One elevation texture, many uses.** A single R16F texture provides ocean depth colouring,
-isobaths, surf and the particle land mask.
+isobaths, surf, the calm shallows and the particle land mask.
 
 **Terrain as an asset.** The land is modelled at true scale, with no vertical exaggeration. The
 mesh starts as a 2048² z11 grid cut down to the cells that touch land (1.76M triangles).
@@ -135,15 +148,45 @@ applied. The island gets its own z12 drape at about 50 m per texel, faded in at 
 box; phones and GPUs without 8192 textures keep the 110 m domain drape. Night lights are not hand-placed: they come from pixels that are bright, grey and flat
 in the imagery, which is the real urban fabric.
 
-**Aerial perspective.** Haze density falls off exponentially with height (1.2 km scale height),
-and the fog integrates it along each view ray in closed form. Ridges therefore fade into blue
-layers with distance, the horizon at sea level dissolves into the sky, and the overview, which
-looks down through thin air, stays crisp without any altitude special case.
+**Physical atmosphere.** The sky is Hillaire's (2020) model in kilometres: transmittance and
+multiple-scattering LUTs drawn once, and two sky-view LUTs per frame, one from the camera (the
+dome, correct from orbit) and one from the sea surface (what lights and is reflected by the
+ground). Every material shades in scene radiance and applies per-pixel aerial perspective by
+integrating the same scattering along its view ray, so ridges fade into blue layers, the horizon
+dissolves into haze and the overview looks down through 100 km of air. The three.js sun light
+takes its colour from the CPU-side transmittance, and an exposure metered off the mean sky
+radiance (partial adaptation, so dusk stays dusk) feeds ACES tone mapping. After nautical dusk
+the moon, at its real position and phase, becomes the key light of the whole pipeline, and
+stars fade in with atmospheric extinction.
 
-**Lighting the turbines.** The live sky is filtered into a PMREM environment map whenever the sun
-moves, with open sea in the lower hemisphere, so semi-matte paint picks up skylight instead of
-reading as flat plastic. The selected turbine also casts soft sun shadows from a frustum that
-hugs it.
+**Volumetric clouds.** Cumulus and cirrus follow the forecast's low and high cloud and drift with
+the wind. They are ray-marched through a flat layer at 0.9–2.9 km (Perlin-Worley shape eroded by
+Worley detail, generated on the GPU at load) with multi-octave scattering and powder darkening,
+as a post-processing pass that stops each ray at the depth buffer, so mountains pierce the layer.
+One pixel of each 2x2 block is marched per frame at reduced resolution and the rest is carried
+by reprojection; a joint bilateral upsample keeps silhouettes crisp, and crepuscular rays are
+traced through gaps toward the sun. The terrain and sea take cloud shadows, the sea reflects a
+cloudy environment refreshed every fourth frame, and from the overview the clouds thin out so
+the map stays readable.
+
+**Lighting the turbines.** That cloudy sea-level sky is filtered into a PMREM environment map
+whenever the key light moves or the exposure shifts, so the gloss paint mirrors sky and sea. The
+selected turbine also casts soft sun shadows from a frustum that hugs it.
+
+**Soundscape.** Web Audio, off until the viewer turns it on (`audio/engine.ts`). Recorded beds of
+waves and sea wind fade and muffle as the camera climbs away from the water and swell with the
+live sea state; the wind itself is band-passed pink noise whose level, colour and gusts follow the
+hub-height wind; the nearest rotor is heard as noise amplitude-modulated at its blade-pass
+frequency (three times its live rpm), panned to where it stands, over a recording of its
+machinery up close. Gulls call now and then by day near the water, a CC BY track plays under it
+all, and camera flights and selections have synthesised cues. Five channels (master, music,
+ambience, white noise, effects) are mixed from the toolbar and remembered per browser; the
+context suspends while the tab is hidden.
+
+**Two languages.** Traditional Chinese and English, switched from the toolbar and remembered per
+browser, defaulting to the browser's language (`i18n.ts`). The English table is typed against the
+Chinese one, so a missing string fails the build; dates, weekdays and compass points follow the
+language, and so do the document title and `lang`.
 
 **Failure isolation.** Each part of the scene that loads its own assets sits in a `Layer`: an
 error boundary around a Suspense boundary. A missing or broken file costs that layer, not the
@@ -190,7 +233,35 @@ CSS and JS, and the artifact-mode build loads each model as a self-contained `.g
 losslessly from its `.glb`. Asset URLs are relative everywhere (`base: './'`). If a viewer cannot
 reach Open-Meteo, the app reads the snapshot and labels it as one, with its retrieval time.
 
+## Open Sea (`sea/index.html`)
+
+A companion piece at sea level: one self-contained HTML file (three.js from a CDN, no build step)
+that renders the open strait from a few metres above the water up through the cloud layer. Serve
+the folder statically (`python3 -m http.server -d sea`) and open it.
+
+- **Sky**: Hillaire (2020) — transmittance, multiple-scattering and sky-view LUTs, Mie haze for the
+  marine boundary layer, and per-pixel aerial perspective on the sea and the clouds.
+- **Clouds**: cumulus ray-marched through a spherical shell, shaped by Perlin-Worley noise and
+  eroded by Worley detail (generated on the GPU at load), lit with multi-octave scattering, a
+  dual-lobe phase and powder darkening. One pixel of each 2x2 block is marched per frame and the rest
+  is carried by reprojection; a joint bilateral upsample keeps the horizon crisp. Wind-combed cirrus
+  above, cloud shadows and crepuscular rays below.
+- **Sea**: three FFT cascades of full choppy displacement from a two-peak spectrum (wind sea and
+  swell), a camera-centred radial grid that follows the Earth's curvature to the horizon, slope
+  variance kept through the mip chain for filtered glitter, and whitecaps where the combined
+  Jacobian folds, leaving trails that decay in tile space.
+- **Time**: real solar and lunar positions over the strait. After nautical dusk the moon, at its
+  real phase, lights the whole pipeline; stars fade in with atmospheric extinction.
+- **Data**: "套用即時海況與時間" applies the live Open-Meteo wind, wind sea, swell and cloud cover
+  for 24.0°N 119.9°E. Until then the page shows a typical October north-east monsoon sea.
+- **Budget**: adaptive resolution from the measured frame interval; the reflection environment is
+  refreshed every fourth frame and bloom runs at half resolution.
+
 ## Credits
+
+Sound (found through Openverse): “Ocean Dream” by Windpearl, CC BY 3.0 (Jamendo); ocean waves by
+rucisko, sea wind by Potapooo, gulls by steaq and Snapper4298, wind turbine by eguaus, all CC0
+(Freesound). The recordings are trimmed into crossfaded loops and loudness-normalised.
 
 Imagery: Sentinel-2 cloudless 2024 – https://s2maps.eu by EOX IT Services GmbH (contains modified
 Copernicus Sentinel data 2024), licensed CC BY-NC-SA 4.0. Elevation: AWS Terrain Tiles. Weather:

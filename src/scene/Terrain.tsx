@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { DETAIL, WORLD, worldExtent } from '../geo/domain'
 import { modelUrl } from '../modelUrl'
 import { ATMOSPHERE_GLSL, atmosphere } from './atmosphere'
+import { CLOUDS_GLSL, clouds } from './clouds'
 
 const TERRAIN_URL = modelUrl('terrain')
 const IMAGERY_URL = 'textures/imagery.webp'
@@ -26,6 +27,7 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture, detail: 
     defines: detail ? { DETAIL: '' } : {},
     uniforms: {
       ...atmosphere,
+      ...clouds,
       uImagery: { value: imagery },
       uNormals: { value: normals },
       uDetail: { value: detail ?? null },
@@ -46,6 +48,7 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture, detail: 
     `,
     fragmentShader: /* glsl */ `
       ${ATMOSPHERE_GLSL}
+      ${CLOUDS_GLSL}
       uniform sampler2D uImagery;
       uniform sampler2D uNormals;
       uniform sampler2D uDetail;
@@ -78,11 +81,9 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture, detail: 
         float baked = clamp(dot(n, uCaptureSun) / uCaptureSun.y, 0.35, 1.25);
         albedo /= mix(1.0, baked, 0.8);
 
-        float sunLight = max(dot(n, uSunDir), 0.0) * smoothstep(-0.04, 0.12, uSunDir.y);
-        float moonLight = max(dot(n, MOON_DIR), 0.0) * (1.0 - uDay);
-        vec3 ambient = mix(vec3(0.020, 0.030, 0.050), vec3(0.24, 0.29, 0.36), uDay);
-        vec3 light = sunColor() * sunLight * 1.45 + vec3(0.10, 0.13, 0.20) * moonLight + ambient * (0.55 + 0.45 * n.y);
-        vec3 col = albedo * light;
+        // Lambertian under the key light through the atmosphere and the sky dome.
+        vec3 light = sunIrradiance(vWorld.y) * cloudShadow(vWorld) * max(dot(n, uSunDir), 0.0) + skyIrradiance() * (0.55 + 0.45 * n.y);
+        vec3 col = albedo / PI * light;
 
         // City lights where the imagery is bright and grey on the lowland: the real urban fabric.
         float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
@@ -92,9 +93,10 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture, detail: 
         urban *= (1.0 - smoothstep(80.0, 400.0, h)) * smoothstep(0.9, 0.98, n.y);
         float grain = hash12(floor(vWorld.xz * 30.0));
         vec3 sodium = vec3(1.0, 0.62, 0.28) * urban * (0.35 + 0.9 * grain);
-        col += sodium * 1.6 * (1.0 - smoothstep(0.0, 0.45, uDay));
+        // Emission is given in display units, so it reads the same under any exposure.
+        col += sodium * 1.6 * (1.0 - smoothstep(0.0, 0.45, uDay)) / uExposure;
 
-        col = applyFog(col, vWorld);
+        col = aerialPerspective(col, vWorld) * uExposure;
         // Engineering mode: cartographic contours, 200 m and 1000 m index lines.
         float lines = contour(h, 200.0) * 0.5 + contour(h, 1000.0);
         col = mix(col, vec3(0.1, 0.9, 1.0) * lines + col * 0.25, uDebug);

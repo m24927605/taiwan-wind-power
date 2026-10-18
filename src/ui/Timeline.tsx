@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useT } from '../i18n'
 import { useStore } from '../state'
 import { formatDate, formatDay, formatTime, formatWeekday, taipeiHour } from './format'
 
@@ -9,6 +10,7 @@ export function Timeline() {
   const time = useStore((s) => s.time)
   const live = useStore((s) => s.live)
   const speed = useStore((s) => s.speed)
+  const t = useT()
 
   const range = useMemo(() => {
     if (!weather) return null
@@ -26,11 +28,11 @@ export function Timeline() {
   const isNight = hour < 6 || hour >= 18
 
   return (
-    <section className="timeline glass" aria-label="時間軸">
+    <section className="timeline glass" aria-label={t.timeline}>
       <div className="timeline__controls">
         <button
           className="icon-btn"
-          aria-label={playing ? '暫停' : '縮時播放'}
+          aria-label={playing ? t.pause : t.play}
           onClick={() => useStore.setState(playing ? { speed: 0 } : { live: false, speed: TIMELAPSE_HOURS_PER_SECOND })}
         >
           {playing ? (
@@ -44,21 +46,21 @@ export function Timeline() {
           LIVE
         </button>
         <div className="timeline__clock">
-          <span className="timeline__date">{formatDate(time)}</span>
-          <span className="timeline__time">{formatTime(time)}</span>
-          <span className="timeline__tz">{isNight ? '夜' : '日'} · UTC+8</span>
+          <span className="timeline__date">{formatDate(time, t.lang)}</span>
+          <span className="timeline__time">{formatTime(time, t.lang)}</span>
+          <span className="timeline__tz">{isNight ? t.night : t.day} · UTC+8</span>
         </div>
       </div>
       <div className="timeline__track">
         {range.days.map((d) => (
           <span key={d} className="timeline__day" style={{ left: `${pct(d)}%` }}>
-            {formatDay(d)}
-            <em>{formatWeekday(d)}</em>
+            {formatDay(d, t.lang)}
+            <em>{formatWeekday(d, t.lang)}</em>
           </span>
         ))}
-        <span className="timeline__now" style={{ left: `${pct(now)}%` }} title="現在" />
+        <span className="timeline__now" style={{ left: `${pct(now)}%` }} title={t.now} />
         <span className="timeline__forecast" style={{ left: `${pct(now)}%` }}>
-          預報 →
+          {t.forecast}
         </span>
         <div className="timeline__fill" style={{ width: `${pct(time)}%` }} />
         <input
@@ -67,7 +69,7 @@ export function Timeline() {
           max={range.end}
           step={60}
           value={time}
-          aria-label="場景時間"
+          aria-label={t.sceneTime}
           onChange={(e) => useStore.setState({ live: false, speed: 0, time: Number(e.target.value) })}
         />
       </div>

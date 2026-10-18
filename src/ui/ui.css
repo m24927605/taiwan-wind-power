@@ -1334,3 +1334,103 @@ small {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------- sound and language */
+
+.toolbar__lang b {
+  font: 600 12px/1 'Inter', 'Noto Sans TC', sans-serif;
+  letter-spacing: 0.08em;
+}
+
+.sound-panel {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 280px;
+  padding: 14px 16px 12px;
+  /* Nested inside the toolbar's glass, a second backdrop blur has nothing to blur: go opaque. */
+  background: rgba(8, 14, 24, 0.94);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.sound-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.sound-panel header b {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.toolbar .sound-panel button.sound-panel__toggle {
+  width: auto;
+  height: auto;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.toolbar .sound-panel button.sound-panel__toggle.is-on {
+  color: var(--tide);
+  border-color: rgba(95, 225, 255, 0.45);
+}
+
+.sound-panel__row {
+  display: grid;
+  grid-template-columns: 64px 1fr 28px;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-dim);
+}
+
+.sound-panel__row input {
+  width: 100%;
+  accent-color: var(--tide);
+  margin: 0;
+}
+
+.sound-panel__row output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.sound-panel__note {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.sound-panel__credits {
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+.sound-panel__credits summary {
+  cursor: pointer;
+}
+
+.sound-panel__credits p {
+  margin: 4px 0 0;
+}
+
+@media (max-width: 760px) {
+  .sound-panel {
+    left: 0;
+    top: calc(100% + 8px);
+    transform: none;
+    width: min(300px, calc(100vw - 32px));
+  }
+}

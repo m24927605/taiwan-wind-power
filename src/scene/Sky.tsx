@@ -2,72 +2,86 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { ATMOSPHERE_GLSL, atmosphere } from './atmosphere'
+import { CLOUDS_GLSL, clouds } from './clouds'
 
 /**
- * The sky dome. The environment variant feeds image-based lighting: it drops stars and the sun
- * disc (the sun is a directional light) and fills the lower hemisphere with open sea.
+ * The sky dome, from the atmosphere's sky-view LUT. The environment variant feeds image-based
+ * lighting: the sky as seen from the sea surface without the key light's disc (that is the
+ * directional light), over a dim sea in the lower hemisphere.
  */
-const createMaterial = (environment: boolean) => new THREE.ShaderMaterial({
-  uniforms: { ...atmosphere },
-  defines: environment ? { ENVIRONMENT: '' } : {},
-  side: THREE.BackSide,
-  depthWrite: false,
-  depthTest: false,
-  vertexShader: /* glsl */ `
-    varying vec3 vDir;
-    void main() {
-      vDir = normalize(position);
-      vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      gl_Position = p.xyww;
-    }
-  `,
-  fragmentShader: /* glsl */ `
-    ${ATMOSPHERE_GLSL}
-    varying vec3 vDir;
+const createMaterial = (environment: boolean) =>
+  new THREE.ShaderMaterial({
+    uniforms: { ...atmosphere, ...clouds },
+    defines: environment ? { ENVIRONMENT: '' } : {},
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+    vertexShader: /* glsl */ `
+      varying vec3 vDir;
+      void main() {
+        vDir = normalize(position);
+        vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        gl_Position = p.xyww;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      ${ATMOSPHERE_GLSL}
+      ${CLOUDS_GLSL}
+      varying vec3 vDir;
+      const float DISC_RADIUS = 0.00465;
 
-    float stars(vec3 dir) {
-      // Cube-face cells give an even star distribution without polar pinching.
-      vec3 a = abs(dir);
-      vec2 uv = a.x > a.y && a.x > a.z ? dir.yz / a.x : a.y > a.z ? dir.xz / a.y : dir.xy / a.z;
-      vec2 cell = floor(uv * 260.0);
-      float h = hash12(cell + sign(dir.x) * 17.0 + sign(dir.y) * 31.0 + sign(dir.z) * 7.0);
-      vec2 f = fract(uv * 260.0) - 0.5;
-      float star = smoothstep(0.08, 0.0, length(f)) * step(0.985, h);
-      float twinkle = 0.6 + 0.4 * sin(uTime * (1.0 + h * 3.0) + h * 40.0);
-      return star * twinkle * (h - 0.985) * 66.0;
-    }
+      // Hashed stars on a grid of directions, about a pixel across.
+      float stars(vec3 d) {
+        vec3 p = d * 300.0;
+        vec3 cell = floor(p);
+        vec3 h = fract(sin(vec3(dot(cell, vec3(127.1, 311.7, 74.7)), dot(cell, vec3(269.5, 183.3, 246.1)), dot(cell, vec3(113.5, 271.9, 124.6)))) * 43758.5453);
+        if (h.x < 0.975) return 0.0;
+        float r = length(p - cell - 0.2 - h * 0.6);
+        float twinkle = 0.7 + 0.3 * sin(uTime * (1.0 + h.z * 3.0) + h.y * 40.0);
+        return smoothstep(0.35, 0.0, r) * (0.15 + pow(h.y, 8.0) * 4.0) * twinkle;
+      }
 
-    void main() {
-      vec3 dir = normalize(vDir);
-      vec3 col = skyColor(dir);
-      #ifdef ENVIRONMENT
-      // Skylight reaching a surface is far less saturated than the zenith seen against black.
-      col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 0.45);
-      // Below the horizon: deep water reflecting a dimmed sky.
-      vec3 sea = vec3(0.012, 0.05, 0.07) * mix(0.05, 1.0, uDay) + skyColor(vec3(dir.x, -dir.y, dir.z)) * 0.06;
-      col = mix(col, sea, smoothstep(0.02, -0.04, dir.y));
-      col += sunColor() * pow(max(dot(dir, uSunDir), 0.0), 12.0) * 0.18 * uDay;
-      gl_FragColor = vec4(col, 1.0);
-      return;
-      #endif
-      float sd = max(dot(dir, uSunDir), 0.0);
-      col += sunColor() * (pow(sd, 1800.0) * 12.0 + pow(sd, 12.0) * 0.18 * (0.3 + uDay));
-      float night = 1.0 - smoothstep(0.0, 0.35, uDay);
-      col += vec3(0.85, 0.9, 1.0) * stars(dir) * night * smoothstep(0.0, 0.15, dir.y);
-      float md = max(dot(dir, MOON_DIR), 0.0);
-      col += vec3(0.8, 0.86, 1.0) * (smoothstep(0.99985, 0.9999, md) * 1.6 + pow(md, 60.0) * 0.08) * night;
-      gl_FragColor = vec4(col, 1.0);
-      #include <colorspace_fragment>
-    }
-  `,
-})
+      void main() {
+        vec3 dir = normalize(vDir);
+        #ifdef ENVIRONMENT
+        vec3 col = groundEnvRadiance(vec3(dir.x, max(dir.y, 0.0), dir.z), 0.0);
+        // Below the horizon: deep water reflecting a little of the sky above it.
+        vec3 sea = groundSkyRadiance(vec3(dir.x, -dir.y, dir.z)) * 0.06
+          + vec3(0.006, 0.014, 0.018) * (skyIrradiance() + sunIrradiance(0.0) * max(uSunDir.y, 0.0));
+        col = mix(col, sea, smoothstep(0.02, -0.04, dir.y));
+        #else
+        vec3 col = applyCirrus(skyRadiance(dir), dir, uCameraPos);
+        float r = RG + max(uCameraPos.y, 0.001);
+        float darkness = smoothstep(-0.08, -0.25, uSunTrue.y);
+        if (darkness > 0.0) col += stars(dir) * darkness * 6e-3 * transmittanceTo(r, dir.y) * step(0.0, dir.y);
+        float x = acos(clamp(dot(dir, uSunDir), -1.0, 1.0)) / DISC_RADIUS;
+        if (x < 1.2) {
+          float mu = sqrt(max(1.0 - x * x, 0.0));
+          float shade = 1.0 - 0.6 * (1.0 - mu);
+          if (uMoonLight > 0.5) {
+            // The moon's near hemisphere, lit by the sun: its phase, with a little earthshine.
+            vec3 t1 = normalize(cross(uSunDir, vec3(0.0, 1.0, 0.0)));
+            vec3 t2 = cross(t1, uSunDir);
+            vec3 off = (dir - uSunDir * dot(dir, uSunDir)) / DISC_RADIUS;
+            vec3 n = t1 * dot(off, t1) + t2 * dot(off, t2) - uSunDir * mu;
+            float full = pow(0.5 - 0.5 * dot(uSunTrue, uSunDir), 1.5);
+            shade = (max(dot(n, uSunTrue), 0.0) + 0.01) / max(full, 0.02);
+          }
+          col += uSunE * sunTransmittance(r, uSunDir.y) * 80.0 * shade * smoothstep(1.05, 0.95, x);
+        }
+        #endif
+        gl_FragColor = vec4(col * uExposure, 1.0);
+        #include <colorspace_fragment>
+      }
+    `,
+  })
 
 const material = createMaterial(false)
 const geometry = new THREE.SphereGeometry(1, 48, 24)
 
-/** Re-filter the environment once the sun has moved this far (radians) or daylight has shifted. */
+/** Re-filter the environment once the key light has moved this far (radians) or exposure has shifted. */
 const ENV_SUN_STEP = 0.01
-const ENV_DAY_STEP = 0.02
+const ENV_EXPOSURE_STEP = 0.04
 
 export function Sky() {
   const mesh = useRef<THREE.Mesh>(null)
@@ -80,7 +94,7 @@ export function SkyEnvironment() {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
   const state = useRef<{ pmrem: THREE.PMREMGenerator; sky: THREE.Scene; target: THREE.WebGLRenderTarget | null } | null>(null)
-  const last = useRef({ sun: new THREE.Vector3(0, -2, 0), day: -1 })
+  const last = useRef({ sun: new THREE.Vector3(0, -2, 0), exposure: -1 })
 
   useEffect(() => {
     const envMaterial = createMaterial(true)
@@ -88,7 +102,7 @@ export function SkyEnvironment() {
     sky.add(new THREE.Mesh(geometry, envMaterial))
     const s = { pmrem: new THREE.PMREMGenerator(gl), sky, target: null as THREE.WebGLRenderTarget | null }
     state.current = s
-    last.current.day = -1
+    last.current.exposure = -1
     return () => {
       if (scene.environment === s.target?.texture) scene.environment = null
       s.target?.dispose()
@@ -100,12 +114,13 @@ export function SkyEnvironment() {
 
   useFrame(() => {
     const s = state.current
-    if (!s) return
+    if (!s || !atmosphere.uGroundSky.value) return
     const sun = atmosphere.uSunDir.value
-    const day = atmosphere.uDay.value
-    if (last.current.sun.angleTo(sun) < ENV_SUN_STEP && Math.abs(last.current.day - day) < ENV_DAY_STEP) return
+    const exposure = atmosphere.uExposure.value
+    const moved = last.current.sun.angleTo(sun) >= ENV_SUN_STEP
+    if (!moved && Math.abs(exposure / last.current.exposure - 1) < ENV_EXPOSURE_STEP) return
     last.current.sun.copy(sun)
-    last.current.day = day
+    last.current.exposure = exposure
     const previous = s.target
     s.target = s.pmrem.fromScene(s.sky, 0, 0.1, 10)
     scene.environment = s.target.texture

@@ -1,8 +1,6 @@
 // Physical spec of the 8 MW-class offshore turbine used across Taiwan's Strait farms.
 // The GLB is authored in metres with the turbine root at sea level, rotor facing +Z.
 
-import { modelUrl } from '../../modelUrl'
-
 export const TURBINE = {
   hubHeight: 112,
   rotorRadius: 84,
@@ -15,8 +13,6 @@ export const TURBINE = {
   /** Feathered rotors still idle in a breeze rather than stand dead still. */
   idleRpm: 1.5,
 } as const
-
-export const TURBINE_GLB_URL = modelUrl('turbine')
 
 /** Electrical output in MW for a hub-height wind speed, from a cubic power curve. */
 export function powerAt(windMs: number): number {

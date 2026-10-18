@@ -1,6 +1,7 @@
 import type { CameraControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { TURBINES } from '../data/windfarms'
+import { playEffect } from '../audio/engine'
 import { useStore } from '../state'
 import type { FarmArea } from './farmAreas'
 import { TURBINE } from './turbine/spec'
@@ -26,6 +27,8 @@ export function getControls(): CameraControls | null {
 /** Glide to a three-quarter view of a turbine's nacelle, from the side its rotor faces away from. */
 export function flyToTurbine(index: number) {
   const t = TURBINES[index]
+  playEffect('select')
+  playEffect('fly')
   const yaw = farmDynamics.yaw[t.farm]
   const hubY = TURBINE.hubHeight * TURBINE_SCALE
   const angle = yaw + Math.PI * 0.62
@@ -46,6 +49,7 @@ export function flyToTurbine(index: number) {
 /** Oblique view over a whole wind farm, from the south-east so the coast sits behind it. */
 export function flyToFarm({ center, radius }: FarmArea) {
   const r = radius * 2.2 + 2
+  playEffect('fly')
   useStore.setState({ selected: null, hoveredFarm: null })
   controlsInstance?.setLookAt(center[0] + r * 0.55, r * 0.55, center[1] + r * 0.8, center[0], 0, center[1], true)
 }
@@ -60,6 +64,7 @@ export function flyToOverview(animate: boolean) {
   const c = controlsInstance
   if (!c) return
   const p = overviewPosition((c.camera as THREE.PerspectiveCamera).aspect)
+  if (animate) playEffect('fly')
   c.setLookAt(p.x, p.y, p.z, ...OVERVIEW.target.toArray(), animate)
 }
 

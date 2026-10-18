@@ -1,9 +1,13 @@
 import { PerformanceMonitor } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
-import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing'
+import { Bloom, EffectComposer, ToneMapping, Vignette } from '@react-three/postprocessing'
+import { ToneMappingMode } from 'postprocessing'
 import { useState } from 'react'
 import { useStore } from '../state'
+import { Soundscape } from '../audio/Soundscape'
+import { AtmosphereLuts } from './AtmosphereLuts'
 import { CameraRig } from './CameraRig'
+import { CloudLayer } from './CloudLayer'
 import { DevProbe } from './DevProbe'
 import { FarmBounds } from './FarmBounds'
 import { Interaction } from './Interaction'
@@ -46,6 +50,8 @@ export function Scene() {
       />
       <StatsProbe particles={PARTICLE_SIZE * PARTICLE_SIZE} />
       <SceneClock />
+      <AtmosphereLuts />
+      <Soundscape />
       {import.meta.env.DEV && <DevProbe />}
       <CameraRig />
       <Sky />
@@ -74,8 +80,11 @@ export function Scene() {
       <Measure />
       {/* MSAA only pays off below ~1.5x; at retina density the extra samples cost more than they show. */}
       <EffectComposer multisampling={dpr > 1.5 ? 0 : 4}>
-        <Bloom mipmapBlur intensity={0.75} luminanceThreshold={0.9} luminanceSmoothing={0.2} radius={0.7} />
+        <CloudLayer dpr={dpr} />
+        <Bloom mipmapBlur intensity={0.6} luminanceThreshold={2.2} luminanceSmoothing={0.5} radius={0.7} />
         <Vignette offset={0.32} darkness={0.55} />
+        {/* The scene is shaded in exposed scene radiance; ACES brings highlights into range. */}
+        <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       </EffectComposer>
     </Canvas>
   )

@@ -1,6 +1,7 @@
 import { WIND_FARMS } from '../data/windfarms'
 import { hourIndex } from '../data/weather'
 import { farmDynamics, totalOutputMW } from '../scene/turbine/dynamics'
+import { useT } from '../i18n'
 import { useStore } from '../state'
 import { compass8, formatDay, formatNumber, formatTime, useTicker } from './format'
 
@@ -11,15 +12,16 @@ export function Title() {
   const live = useStore((s) => s.live)
   const weather = useStore((s) => s.weather)
   const snapshot = weather?.source === 'snapshot'
+  const t = useT()
   return (
     <header className="title">
       <h1>
         風與潮<span>Wind &amp; Tide</span>
       </h1>
-      <p className="title__sub">台灣海峽 · 即時數位孿生</p>
+      <p className="title__sub">{t.subtitle}</p>
       <p className={`title__live ${live && !snapshot ? 'is-live' : ''}`}>
         <i />
-        {!live ? '時光回放' : snapshot ? `資料快照 · ${formatDay(weather.fetchedAt)} ${formatTime(weather.fetchedAt)}` : 'LIVE · 即時資料'}
+        {!live ? t.replay : snapshot ? t.snapshot(`${formatDay(weather.fetchedAt, t.lang)} ${formatTime(weather.fetchedAt, t.lang)}`) : t.live}
       </p>
     </header>
   )
@@ -38,8 +40,9 @@ export function Metrics() {
   useTicker(250)
   const weather = useStore((s) => s.weather)
   const error = useStore((s) => s.error)
-  if (error) return <aside className="metrics glass metrics--error">即時資料載入失敗：{error}</aside>
-  if (!weather) return <aside className="metrics glass metrics--loading">正在讀取 Open-Meteo 即時資料…</aside>
+  const t = useT()
+  if (error) return <aside className="metrics glass metrics--error">{t.loadFailed(error)}</aside>
+  if (!weather) return <aside className="metrics glass metrics--loading">{t.loading}</aside>
 
   const output = totalOutputMW()
   let windSum = 0
@@ -56,7 +59,7 @@ export function Metrics() {
 
   return (
     <aside className="metrics glass">
-      <div className="metrics__label">海峽離岸風電 · 估算即時出力</div>
+      <div className="metrics__label">{t.outputLabel}</div>
       <div className="metrics__hero">
         {formatNumber(output)}
         <small>MW</small>
@@ -65,29 +68,29 @@ export function Metrics() {
         <i style={{ width: `${(factor * 100).toFixed(1)}%` }} />
       </div>
       <div className="metrics__caption">
-        容量因數 {(factor * 100).toFixed(0)}% · 裝置容量 {formatNumber(CAPACITY_MW)} MW · {TURBINE_COUNT} 座風機
+        {t.capacityCaption((factor * 100).toFixed(0), formatNumber(CAPACITY_MW), TURBINE_COUNT)}
       </div>
       <dl className="metrics__grid">
         <div>
-          <dt>輪轂高度風速</dt>
+          <dt>{t.hubWind}</dt>
           <dd className="is-wind">
             {meanWind.toFixed(1)}
             <small>m/s</small>
           </dd>
           <dd className="metrics__note">
             <span className="arrow" style={{ transform: `rotate(${windFrom + 180}deg)` }}>↑</span>
-            {compass8(windFrom)}風
+            {t.windFrom(compass8(windFrom, t.lang))}
           </dd>
         </div>
         <div>
-          <dt>黑潮最大流速</dt>
+          <dt>{t.peakCurrent}</dt>
           <dd className="is-tide">
             {peakCurrent().toFixed(2)}
             <small>m/s</small>
           </dd>
           <dd className="metrics__note">
-            Open-Meteo · {weather.source === 'snapshot' && `${formatDay(weather.fetchedAt)} `}
-            {formatTime(weather.fetchedAt)} {weather.source === 'snapshot' ? '快照' : '更新'}
+            Open-Meteo · {weather.source === 'snapshot' && `${formatDay(weather.fetchedAt, t.lang)} `}
+            {formatTime(weather.fetchedAt, t.lang)} {weather.source === 'snapshot' ? t.snapshotTag : t.updated}
           </dd>
         </div>
       </dl>

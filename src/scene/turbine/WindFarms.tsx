@@ -8,6 +8,7 @@ import { LOD_MID, LOD_NEAR, lodCounts } from './lod'
 import { TURBINE } from './spec'
 import { TURBINE_SCALE, farmDynamics } from './dynamics'
 import { useTurbineModel } from './useTurbineModel'
+import { TURBINE_PAINT, applyWeathering } from './weathering'
 
 const REBUCKET_EVERY = 3
 
@@ -23,11 +24,12 @@ const turbineUniforms = {
   uDebug: atmosphere.uDebug,
 }
 
-function createMaterial(isRotor: boolean, lod: number): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 })
+function createMaterial(isRotor: boolean, lod: number): THREE.MeshPhysicalMaterial {
+  const material = new THREE.MeshPhysicalMaterial(TURBINE_PAINT)
   // onBeforeCompile sources are identical for body and rotor; key them apart or three shares one program.
   material.customProgramCacheKey = () => `turbine-${isRotor ? 'rotor' : 'body'}`
   material.onBeforeCompile = (shader) => {
+    applyWeathering(shader, isRotor)
     Object.assign(shader.uniforms, turbineUniforms, {
       uHub: { value: new THREE.Vector3(0, TURBINE.hubHeight, TURBINE.hubOffsetZ) },
       uLodTint: { value: LOD_TINTS[lod] },

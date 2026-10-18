@@ -2,7 +2,10 @@ import { useGLTF } from '@react-three/drei'
 import { useMemo } from 'react'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { TURBINE, TURBINE_GLB_URL } from './spec'
+import { modelUrl } from '../../modelUrl'
+import { TURBINE } from './spec'
+
+const TURBINE_GLB_URL = modelUrl('turbine')
 
 export interface TurbineModel {
   /** Instancing geometries in metres; rotors are hub-centred so the shader can spin them in place. */
@@ -23,11 +26,13 @@ function bakedGeometry(scene: THREE.Group, name: string, offset?: THREE.Vector3)
   if (!mesh) throw new Error(`turbine.glb: missing node ${name}`)
   mesh.updateWorldMatrix(true, false)
   const g = new THREE.BufferGeometry()
-  for (const key of ['position', 'normal', 'color']) {
+  // Albedo, surface (roughness, metalness, weathering) and baked ambient occlusion ride along.
+  for (const key of ['position', 'normal', 'color', '_surface', '_ao']) {
     const src = mesh.geometry.getAttribute(key)
-    const out = new Float32Array(src.count * 3)
-    for (let i = 0; i < src.count; i++) out.set([src.getX(i), src.getY(i), src.getZ(i)], i * 3)
-    g.setAttribute(key, new THREE.BufferAttribute(out, 3))
+    const size = src.itemSize
+    const out = new Float32Array(src.count * size)
+    for (let i = 0; i < src.count; i++) for (let c = 0; c < size; c++) out[i * size + c] = src.getComponent(i, c)
+    g.setAttribute(key, new THREE.BufferAttribute(out, size))
   }
   g.setIndex(mesh.geometry.index)
   g.applyMatrix4(mesh.matrixWorld)

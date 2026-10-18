@@ -4,6 +4,7 @@ import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import type { Line2 } from 'three/examples/jsm/lines/Line2.js'
 import { WIND_FARMS } from '../data/windfarms'
+import { useT } from '../i18n'
 import { useStore } from '../state'
 import { flyToFarm } from './camera'
 import { AREA_LIFT, FARM_AREAS } from './farmAreas'
@@ -19,6 +20,7 @@ const scratch = new THREE.Vector3()
 /** Outlines and labels that locate the wind farms from the overview, where turbines are specks. */
 export function FarmBounds() {
   const bounds = FARM_AREAS
+  const t = useT()
   const lines = useRef<(Line2 | null)[]>([])
   const fills = useRef<(THREE.Mesh | null)[]>([])
   const labels = useRef<(HTMLDivElement | null)[]>([])
@@ -99,10 +101,8 @@ export function FarmBounds() {
                 onPointerEnter={() => useStore.setState({ hoveredFarm: i })}
                 onPointerLeave={() => useStore.setState({ hoveredFarm: null })}
               >
-                <b>{WIND_FARMS[i].name}</b>
-                <span>
-                  {WIND_FARMS[i].turbines} 座 · {Math.round(b.capacity)} MW
-                </span>
+                <b>{t.lang === 'zh' ? WIND_FARMS[i].name : WIND_FARMS[i].nameEn}</b>
+                <span>{t.farmLabel(WIND_FARMS[i].turbines, Math.round(b.capacity))}</span>
               </button>
             </div>
           </Html>

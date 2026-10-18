@@ -2,8 +2,8 @@ import { DOMAIN } from '../geo/domain'
 import { WIND_FARMS } from './windfarms'
 
 // Live hourly ocean currents and sea state (Open-Meteo Marine) on a grid over the domain, and
-// hub-height wind (Open-Meteo Forecast, 100 m) at every wind farm, from yesterday through three
-// days ahead. Where Open-Meteo cannot be reached (a sandboxed host), a snapshot bundled at deploy
+// hub-height wind and cloud cover (Open-Meteo Forecast) at every wind farm, from yesterday through
+// three days ahead. Where Open-Meteo cannot be reached (a sandboxed host), a snapshot bundled at deploy
 // time by scripts/snapshot-weather.ts stands in, and says so.
 
 export const CURRENT_GRID = { cols: 14, rows: 14 } as const
@@ -13,8 +13,13 @@ export interface Weather {
   times: number[]
   /** Per hour: eastward/northward current in m/s, interleaved, row 0 at the north edge. */
   currents: Float32Array[]
-  /** Strait sea state per hour: [significant height m, mean period s, direction-from degrees]. */
+  /**
+   * Strait sea state per hour, as two spectral components: [height m, mean period s,
+   * direction-from degrees] of the wind sea, then the same for the swell.
+   */
   sea: Float32Array
+  /** Per hour: low and high cloud cover over the farms, 0..1. */
+  clouds: Float32Array
   /** Per farm: [speed m/s, direction-from degrees] per hour, interleaved. */
   wind: Float32Array[]
   /** When the data was retrieved from Open-Meteo, unix seconds. */
@@ -73,14 +78,18 @@ async function getJson<T>(url: string): Promise<{ at: number; body: T }> {
   return entry
 }
 
-type MarineVariable = 'ocean_current_velocity' | 'ocean_current_direction' | 'wave_height' | 'wave_period' | 'wave_direction'
+const SEA_COMPONENTS = ['wind_wave', 'swell_wave'] as const
+type MarineVariable =
+  | 'ocean_current_velocity'
+  | 'ocean_current_direction'
+  | `${(typeof SEA_COMPONENTS)[number]}_${'height' | 'period' | 'direction'}`
 
 /** Raw Open-Meteo responses, as fetched live and as stored in the snapshot. */
 export interface OpenMeteo {
   /** Retrieval time, unix milliseconds. */
   at: number
   marine: Hourly<MarineVariable>[]
-  wind: Hourly<'wind_speed_100m' | 'wind_direction_100m'>[]
+  wind: Hourly<'wind_speed_100m' | 'wind_direction_100m' | 'cloud_cover_low' | 'cloud_cover_high'>[]
 }
 
 export async function fetchOpenMeteo(range = LIVE_RANGE): Promise<OpenMeteo> {
@@ -88,11 +97,13 @@ export async function fetchOpenMeteo(range = LIVE_RANGE): Promise<OpenMeteo> {
   const [marine, wind] = await Promise.all([
     getJson<OpenMeteo['marine']>(
       `https://marine-api.open-meteo.com/v1/marine?latitude=${lats}&longitude=${lons}` +
-        `&hourly=ocean_current_velocity,ocean_current_direction,wave_height,wave_period,wave_direction&${range}`,
+        `&hourly=ocean_current_velocity,ocean_current_direction,` +
+        SEA_COMPONENTS.map((c) => `${c}_height,${c}_period,${c}_direction`).join(',') +
+        `&${range}`,
     ),
     getJson<OpenMeteo['wind']>(
       `https://api.open-meteo.com/v1/forecast?latitude=${WIND_FARMS.map((f) => f.lat)}` +
-        `&longitude=${WIND_FARMS.map((f) => f.lon)}&hourly=wind_speed_100m,wind_direction_100m` +
+        `&longitude=${WIND_FARMS.map((f) => f.lon)}&hourly=wind_speed_100m,wind_direction_100m,cloud_cover_low,cloud_cover_high` +
         `&wind_speed_unit=ms&${range}`,
     ),
   ])
@@ -130,16 +141,22 @@ function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']
     return lon >= STRAIT.west && lon <= STRAIT.east && lat >= STRAIT.south && lat <= STRAIT.north
   })
   const median = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)]
-  const sea = new Float32Array(times.length * 3)
+  const sea = new Float32Array(times.length * 6)
   times.forEach((_, h) => {
-    const valid = strait.filter((p) => p.hourly.wave_height[h] !== null && p.hourly.wave_period[h] !== null)
-    if (valid.length === 0) return
-    sea[h * 3] = median(valid.map((p) => p.hourly.wave_height[h]!))
-    sea[h * 3 + 1] = median(valid.map((p) => p.hourly.wave_period[h]!))
-    // Average directions as unit vectors so they wrap through north.
-    const x = valid.reduce((acc, p) => acc + Math.sin(((p.hourly.wave_direction[h] ?? 0) * Math.PI) / 180), 0)
-    const y = valid.reduce((acc, p) => acc + Math.cos(((p.hourly.wave_direction[h] ?? 0) * Math.PI) / 180), 0)
-    sea[h * 3 + 2] = (Math.atan2(x, y) * 180) / Math.PI
+    SEA_COMPONENTS.forEach((c, k) => {
+      const height = (p: (typeof strait)[number]) => p.hourly[`${c}_height`][h]
+      const period = (p: (typeof strait)[number]) => p.hourly[`${c}_period`][h]
+      const direction = (p: (typeof strait)[number]) => ((p.hourly[`${c}_direction`][h] ?? 0) * Math.PI) / 180
+      const valid = strait.filter((p) => height(p) !== null && period(p) !== null)
+      if (valid.length === 0) return
+      const o = h * 6 + k * 3
+      sea[o] = median(valid.map((p) => height(p)!))
+      sea[o + 1] = median(valid.map((p) => period(p)!))
+      // Average directions as unit vectors so they wrap through north.
+      const x = valid.reduce((acc, p) => acc + Math.sin(direction(p)), 0)
+      const y = valid.reduce((acc, p) => acc + Math.cos(direction(p)), 0)
+      sea[o + 2] = (Math.atan2(x, y) * 180) / Math.PI
+    })
   })
 
   const windByFarm = wind.map((farm) => {
@@ -153,7 +170,20 @@ function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']
     return out
   })
 
-  return { times, currents, sea, wind: windByFarm, fetchedAt: at / 1000, source }
+  const clouds = new Float32Array(times.length * 2)
+  times.forEach((t, h) => {
+    let low = 0
+    let high = 0
+    for (const farm of wind) {
+      const i = farm.hourly.time.indexOf(t)
+      low += (i < 0 ? 0 : (farm.hourly.cloud_cover_low[i] ?? 0)) / 100
+      high += (i < 0 ? 0 : (farm.hourly.cloud_cover_high[i] ?? 0)) / 100
+    }
+    clouds[h * 2] = low / wind.length
+    clouds[h * 2 + 1] = high / wind.length
+  })
+
+  return { times, currents, sea, clouds, wind: windByFarm, fetchedAt: at / 1000, source }
 }
 
 /** Fractional hour index of a timestamp, clamped to the available range. */
@@ -183,17 +213,39 @@ export function windAt(weather: Weather, farm: number, t: number): { speed: numb
   return { speed, fromRad: Math.atan2(x, y) }
 }
 
-/** Interpolated strait sea state: significant height m, mean period s, direction-from radians. */
-export function seaAt(weather: Weather, t: number): { hs: number; tm: number; fromRad: number } {
+export interface SeaComponent {
+  /** Significant height, m. */
+  hs: number
+  /** Mean period, s. */
+  tm: number
+  /** Direction the waves come from, radians clockwise from north. */
+  fromRad: number
+}
+
+/** Interpolated strait sea state: the wind sea and the swell. */
+export function seaAt(weather: Weather, t: number): { windSea: SeaComponent; swell: SeaComponent } {
   const f = hourIndex(weather, t)
   const i = Math.floor(f)
   const j = Math.min(i + 1, weather.times.length - 1)
   const k = f - i
   const s = weather.sea
-  const lerp = (o: number) => s[i * 3 + o] + (s[j * 3 + o] - s[i * 3 + o]) * k
-  const a = (s[i * 3 + 2] * Math.PI) / 180
-  const b = (s[j * 3 + 2] * Math.PI) / 180
-  const x = Math.sin(a) * (1 - k) + Math.sin(b) * k
-  const y = Math.cos(a) * (1 - k) + Math.cos(b) * k
-  return { hs: lerp(0), tm: lerp(1), fromRad: Math.atan2(x, y) }
+  const component = (c: number): SeaComponent => {
+    const lerp = (o: number) => s[i * 6 + c * 3 + o] + (s[j * 6 + c * 3 + o] - s[i * 6 + c * 3 + o]) * k
+    const a = (s[i * 6 + c * 3 + 2] * Math.PI) / 180
+    const b = (s[j * 6 + c * 3 + 2] * Math.PI) / 180
+    const x = Math.sin(a) * (1 - k) + Math.sin(b) * k
+    const y = Math.cos(a) * (1 - k) + Math.cos(b) * k
+    return { hs: lerp(0), tm: lerp(1), fromRad: Math.atan2(x, y) }
+  }
+  return { windSea: component(0), swell: component(1) }
+}
+
+/** Interpolated low and high cloud cover over the farms, 0..1. */
+export function cloudsAt(weather: Weather, t: number): { low: number; high: number } {
+  const f = hourIndex(weather, t)
+  const i = Math.floor(f)
+  const j = Math.min(i + 1, weather.times.length - 1)
+  const k = f - i
+  const c = weather.clouds
+  return { low: c[i * 2] + (c[j * 2] - c[i * 2]) * k, high: c[i * 2 + 1] + (c[j * 2 + 1] - c[i * 2 + 1]) * k }
 }

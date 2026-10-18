@@ -9,6 +9,8 @@ import { PARTS } from './parts'
 import { TURBINE } from './spec'
 import { TURBINE_SCALE, farmDynamics } from './dynamics'
 import { useTurbineModel } from './useTurbineModel'
+import { turbineMaterial } from './weathering'
+import { useT } from '../../i18n'
 
 const CUT_SECONDS = 1.6
 
@@ -25,27 +27,21 @@ function Hero({ index }: { index: number }) {
   const progress = useRef(0)
   const [labels, setLabels] = useState(false)
   const [openPart, setOpenPart] = useState<string | null>(null)
+  const t = useT()
 
   const materials = useMemo(() => {
     const plane = new THREE.Plane()
-    const paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 })
-    const shell = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.6,
-      metalness: 0,
-      side: THREE.DoubleSide,
-      clippingPlanes: [plane],
-      clipShadows: true,
-    })
-    const machinery = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.6, clippingPlanes: [] })
-    return { plane, paint, shell, machinery }
+    const paint = turbineMaterial(false)
+    const rotor = turbineMaterial(true)
+    const shell = turbineMaterial(false, { side: THREE.DoubleSide, clippingPlanes: [plane], clipShadows: true })
+    return { plane, paint, rotor, shell }
   }, [])
 
   useEffect(
     () => () => {
       materials.paint.dispose()
+      materials.rotor.dispose()
       materials.shell.dispose()
-      materials.machinery.dispose()
     },
     [materials],
   )
@@ -79,11 +75,11 @@ function Hero({ index }: { index: number }) {
     <group ref={group} position={[turbine.x, 0, turbine.z]} scale={TURBINE_SCALE}>
       <mesh geometry={hero.tower} material={materials.paint} castShadow receiveShadow />
       <mesh geometry={hero.shell} material={materials.shell} castShadow receiveShadow />
-      <mesh geometry={hero.internals} material={materials.machinery} castShadow receiveShadow />
+      <mesh geometry={hero.internals} material={materials.paint} castShadow receiveShadow />
       <mesh
         ref={rotor}
         geometry={hero.rotor}
-        material={materials.paint}
+        material={materials.rotor}
         position={[0, TURBINE.hubHeight, TURBINE.hubOffsetZ]}
         castShadow
         receiveShadow
@@ -91,7 +87,7 @@ function Hero({ index }: { index: number }) {
       {labels &&
         PARTS.map((part) => (
           <Html
-            key={part.name}
+            key={part.id}
             position={part.at}
             center={false}
             zIndexRange={openPart === part.id ? [21, 21] : [20, 0]}
@@ -104,8 +100,8 @@ function Hero({ index }: { index: number }) {
               <span className="part-label__dot" />
               <span className="part-label__line" />
               <button className="part-label__text" onClick={() => setOpenPart(openPart === part.id ? null : part.id)}>
-                <b>{part.name}</b>
-                <i>{part.en}</i>
+                <b>{part.text[t.lang].name}</b>
+                {t.lang === 'zh' && <i>{part.text.en.name}</i>}
               </button>
               {openPart === part.id && <PartCard part={part} farm={turbine.farm} onClose={() => setOpenPart(null)} />}
             </div>

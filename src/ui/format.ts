@@ -1,24 +1,29 @@
 import { useEffect, useState } from 'react'
 
+import { MESSAGES, type Lang } from '../i18n'
+
 const TZ = 'Asia/Taipei'
 
-const dateFmt = new Intl.DateTimeFormat('zh-TW', { timeZone: TZ, month: 'numeric', day: 'numeric', weekday: 'short' })
-const dayFmt = new Intl.DateTimeFormat('zh-TW', { timeZone: TZ, month: 'numeric', day: 'numeric' })
-const weekdayFmt = new Intl.DateTimeFormat('zh-TW', { timeZone: TZ, weekday: 'short' })
-const timeFmt = new Intl.DateTimeFormat('zh-TW', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false })
-const hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hour12: false })
+const formats = new Map<string, Intl.DateTimeFormat>()
+function format(lang: Lang, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = lang + JSON.stringify(options)
+  let f = formats.get(key)
+  if (!f) formats.set(key, (f = new Intl.DateTimeFormat(MESSAGES[lang].locale, { timeZone: TZ, ...options })))
+  return f
+}
 
-export const formatDate = (t: number) => dateFmt.format(t * 1000)
-export const formatDay = (t: number) => dayFmt.format(t * 1000)
-export const formatWeekday = (t: number) => weekdayFmt.format(t * 1000)
-export const formatTime = (t: number) => timeFmt.format(t * 1000)
-export const taipeiHour = (t: number) => Number(hourFmt.format(t * 1000)) % 24
+export const formatDate = (t: number, lang: Lang) => format(lang, { month: 'numeric', day: 'numeric', weekday: 'short' }).format(t * 1000)
+export const formatDay = (t: number, lang: Lang) => format(lang, { month: 'numeric', day: 'numeric' }).format(t * 1000)
+export const formatWeekday = (t: number, lang: Lang) => format(lang, { weekday: 'short' }).format(t * 1000)
+export const formatTime = (t: number, lang: Lang) => format(lang, { hour: '2-digit', minute: '2-digit', hour12: false }).format(t * 1000)
+export const taipeiHour = (t: number) => Number(format('en', { hour: '2-digit', hour12: false }).format(t * 1000)) % 24
 
 export const formatNumber = (v: number, digits = 0) =>
   v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 
-const COMPASS = ['北', '東北', '東', '東南', '南', '西南', '西', '西北']
-export const compass8 = (deg: number) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8]
+const wrap = (deg: number) => ((deg % 360) + 360) % 360
+export const compass8 = (deg: number, lang: Lang) => MESSAGES[lang].compass8[Math.round(wrap(deg) / 45) % 8]
+export const compass16 = (deg: number, lang: Lang) => MESSAGES[lang].compass16[Math.round(wrap(deg) / 22.5) % 16]
 
 /** Re-render the caller on an interval, for panels that read per-frame simulation state. */
 export function useTicker(ms: number) {
