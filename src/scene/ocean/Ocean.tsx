@@ -30,6 +30,7 @@ function createMaterial(elevation: Elevation, waves: THREE.Texture[]) {
       uTileScale: { value: new THREE.Vector3(...CASCADES.map((l) => 1000 / l)) },
       uFoamThreshold: { value: -1 },
       uMicroVariance: { value: 0.004 },
+      uHs: { value: DEFAULT_SEA.hs },
     },
     vertexShader: /* glsl */ `
       varying vec3 vWorld;
@@ -49,6 +50,7 @@ function createMaterial(elevation: Elevation, waves: THREE.Texture[]) {
       uniform vec3 uTileScale;
       uniform float uFoamThreshold;
       uniform float uMicroVariance;
+      uniform float uHs;
       varying vec3 vWorld;
 
       const float PI = 3.141592653589793;
@@ -137,17 +139,16 @@ function createMaterial(elevation: Elevation, waves: THREE.Texture[]) {
         float moonSpec = beckmann(max(dot(N, Hm), 1e-3), variance) * 0.02 / (4.0 * NoV);
         col += vec3(0.75, 0.82, 1.0) * min(moonSpec, 30.0) * 0.12 * (1.0 - uDay);
 
+        // Depth-limited breaking: waves spill once they grow to a sizeable fraction of the depth,
+        // so shoals foam over a wider share of the (folding) wave field.
+        float breaking = smoothstep(0.25, 0.8, uHs / max(depth, 0.1));
+        float threshold = uFoamThreshold + breaking * 0.9;
         // Whitecaps where the choppy surface folds over (Jacobian below threshold).
-        float foam = clamp((uFoamThreshold - w0.w) * 2.5, 0.0, 1.0) * resolved.x
-          + clamp((uFoamThreshold - w1.w) * 2.5, 0.0, 1.0) * 0.6 * resolved.y
-          + clamp((uFoamThreshold - w2.w) * 2.5, 0.0, 1.0) * 0.3 * resolved.z;
-
-        // Surf where the seabed shoals, drifting shoreward.
-        float shore = 1.0 - smoothstep(0.0, 22.0, depth);
-        float surf = smoothstep(0.6, 1.0, sin(depth * 0.55 + uTime * 1.4) * 0.5 + 0.5) * shore;
-        surf *= smoothstep(0.35, 0.8, hash12(floor(vWorld.xz * 40.0)));
-        // Surf breaks on a scale of metres; from altitude it would only read as speckle.
-        foam = clamp(foam + (surf * 0.6 + shore * 0.05) * (1.0 - smoothstep(0.01, 0.06, footprint)), 0.0, 1.0);
+        float foam = clamp((threshold - w0.w) * 2.5, 0.0, 1.0) * resolved.x
+          + clamp((threshold - w1.w) * 2.5, 0.0, 1.0) * 0.6 * resolved.y
+          + clamp((threshold - w2.w) * 2.5, 0.0, 1.0) * 0.3 * resolved.z;
+        // Breaking too fine to resolve still whitens the water on average.
+        foam = clamp(foam + breaking * 0.1 * (1.0 - resolved.x), 0.0, 1.0);
         vec3 foamLight = sunColor() * max(uSunDir.y, 0.0) * 0.9 + mix(vec3(0.02, 0.03, 0.05), vec3(0.35, 0.42, 0.5), uDay);
         col = mix(col, vec3(0.92, 0.95, 0.96) * foamLight, foam * 0.85);
 
@@ -192,6 +193,7 @@ export function Ocean({ elevation, waveResolution }: { elevation: Elevation; wav
       }
     }
     waves.setSeaState(sea)
+    material.uniforms.uHs.value = sea.hs
     waves.update(gl, atmosphere.uTime.value)
 
     let wind = 0
