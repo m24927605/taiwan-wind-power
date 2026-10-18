@@ -42,6 +42,8 @@ coordinates are an approximate array layout, and the UI says so.
   capacity, so they read from the overview where turbines are specks. Labels hang off each farm's
   western corner into the open strait; when they collide, larger farms win. Click a label to fly
   over that farm. Outlines fade out as the camera moves in among the turbines.
+- Once the camera leaves the island-wide view, a "回到台灣全景" pill at the top of the screen
+  flies back to it.
 - `M` measures great-circle distance and bearing. Points snap to turbines.
 - `E` toggles engineering mode, a diagnostic render plus live renderer statistics.
 - `Space` plays or pauses the time-lapse, `R` returns to the overview, and `Esc` clears the

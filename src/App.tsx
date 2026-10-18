@@ -8,7 +8,7 @@ import { EngineeringPanel } from './ui/EngineeringPanel'
 import { Metrics, Title } from './ui/Hud'
 import { Legend } from './ui/Legend'
 import { Timeline } from './ui/Timeline'
-import { ToolHint, Toolbar } from './ui/Toolbar'
+import { OverviewReturn, ToolHint, Toolbar } from './ui/Toolbar'
 import { TurbinePanel } from './ui/TurbinePanel'
 import './ui/ui.css'
 
@@ -27,7 +27,10 @@ export default function App() {
         <Title />
         <Metrics />
         <Toolbar />
-        <ToolHint />
+        <div className="top-center">
+          <OverviewReturn />
+          <ToolHint />
+        </div>
         <EngineeringPanel />
         <TurbinePanel />
         <Legend />

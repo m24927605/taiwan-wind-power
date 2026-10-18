@@ -4,7 +4,10 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { WORLD } from '../geo/domain'
 import { useStore } from '../state'
-import { MATCH_CUT, flyToOverview, registerControls } from './camera'
+import { MATCH_CUT, flyToOverview, overviewPosition, registerControls } from './camera'
+
+/** Within this distance (km) of the overview pose the camera counts as being at the overview. */
+const OVERVIEW_TOLERANCE = 40
 
 export function CameraRig() {
   const ref = useRef<CameraControls>(null)
@@ -43,6 +46,8 @@ export function CameraRig() {
       camera.near = near
       camera.updateProjectionMatrix()
     }
+    const atOverview = camera.position.distanceTo(overviewPosition(camera.aspect)) < OVERVIEW_TOLERANCE
+    if (atOverview !== useStore.getState().atOverview) useStore.setState({ atOverview })
   })
 
   return (

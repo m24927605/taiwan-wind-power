@@ -57,6 +57,19 @@ export function Toolbar() {
   )
 }
 
+/** A prominent way home whenever the camera has left the island-wide view. */
+export function OverviewReturn() {
+  const show = useStore((s) => s.atOverview === false && s.stage === 'main')
+  if (!show) return null
+  return (
+    <button className="overview-return glass" onClick={resetView}>
+      <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
+      回到台灣全景
+      <kbd>R</kbd>
+    </button>
+  )
+}
+
 export function ToolHint() {
   const tool = useStore((s) => s.tool)
   const count = useStore((s) => s.measure.length)

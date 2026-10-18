@@ -39,6 +39,8 @@ interface State {
   measure: [x: number, z: number][]
 
   engineering: boolean
+  /** The camera rests at (or near) the overview of the whole island. */
+  atOverview: boolean
   stats: RenderStats | null
 }
 
@@ -55,5 +57,6 @@ export const useStore = create<State>(() => ({
   selected: null,
   measure: [],
   engineering: false,
+  atOverview: true,
   stats: null,
 }))
