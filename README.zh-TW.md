@@ -9,10 +9,10 @@
 
 ## 介紹影片
 
-[![風與潮：從即時網站逐格錄製的兩分鐘影片](docs/teaser.webp)](https://github.com/m24927605/taiwan-wind-power/releases/tag/film-v1)
+[![風與潮：從即時網站逐格錄製的兩分鐘影片](docs/teaser.webp)](https://m24927605.github.io/taiwan-wind-power/)
 
-觀看兩分鐘介紹影片：**[繁體中文](https://github.com/m24927605/taiwan-wind-power/releases/download/film-v1/wind-and-tide-zh.mp4)** ·
-**[English](https://github.com/m24927605/taiwan-wind-power/releases/download/film-v1/wind-and-tide-en.mp4)**
+觀看兩分鐘介紹影片：**[繁體中文](https://m24927605.github.io/taiwan-wind-power/)** ·
+**[English](https://m24927605.github.io/taiwan-wind-power/#en)**
 
 每個鏡頭都是網站本身的即時渲染，時間取自預報區間內的真實日期與時刻：清晨的波紋、縮時日落、
 依真實月相沉入海峽的月亮。影片在虛擬時鐘上逐格擷取，因此不受電腦效能影響，維持 60 fps。

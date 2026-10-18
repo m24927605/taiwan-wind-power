@@ -10,10 +10,10 @@ wind that is blowing over the strait right now.
 
 ## Film
 
-[![Wind & Tide: a two-minute film recorded from the live site](docs/teaser.webp)](https://github.com/m24927605/taiwan-wind-power/releases/tag/film-v1)
+[![Wind & Tide: a two-minute film recorded from the live site](docs/teaser.webp)](https://m24927605.github.io/taiwan-wind-power/)
 
-Watch the two-minute film: **[English](https://github.com/m24927605/taiwan-wind-power/releases/download/film-v1/wind-and-tide-en.mp4)** ·
-**[繁體中文](https://github.com/m24927605/taiwan-wind-power/releases/download/film-v1/wind-and-tide-zh.mp4)**
+Watch the two-minute film: **[English](https://m24927605.github.io/taiwan-wind-power/#en)** ·
+**[繁體中文](https://m24927605.github.io/taiwan-wind-power/)**
 
 Every shot is the site's own real-time renderer at real dates and times from the forecast
 window: ripples at dawn, a time-lapse sunset, the moon setting into the strait at its true phase.
