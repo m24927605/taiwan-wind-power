@@ -915,6 +915,7 @@ small {
   display: flex;
   align-items: center;
   transform: translate(-100%, -50%);
+  pointer-events: none;
   transition: opacity 0.3s;
 }
 
@@ -928,6 +929,9 @@ small {
 
 .farm-label.is-hidden {
   opacity: 0;
+}
+
+.farm-label.is-hidden button {
   pointer-events: none;
 }
 
@@ -947,7 +951,8 @@ small {
   transition: background 0.2s, border-color 0.2s;
 }
 
-.farm-label button:hover {
+.farm-label button:hover,
+.farm-label.is-hot button {
   border-color: rgba(255, 210, 122, 0.8);
   background: rgba(10, 8, 2, 0.8);
 }

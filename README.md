@@ -40,8 +40,9 @@ coordinates are an approximate array layout, and the UI says so.
   power curve.
 - Wind farms are outlined along their array headings and labelled with turbine count and
   capacity, so they read from the overview where turbines are specks. Labels hang off each farm's
-  western corner into the open strait; when they collide, larger farms win. Click a label to fly
-  over that farm. Outlines fade out as the camera moves in among the turbines.
+  western corner into the open strait; when they collide, larger farms win. Click a label or anywhere
+  inside an outline to fly over that farm; once there, clicks pick individual turbines again.
+  Outlines fade out as the camera moves in among the turbines.
 - Once the camera leaves the island-wide view, a "回到台灣全景" pill at the top of the screen
   flies back to it.
 - `M` measures great-circle distance and bearing. Points snap to turbines.
@@ -63,7 +64,8 @@ src/
   data/             elevation loader, Open-Meteo client (browser-cached), wind farm layout
   scene/            R3F scene: sky, terrain, Kuroshio GPGPU, wind farms, hero turbine
     ocean/            FFT wave simulation and ocean shading
-    camera.ts         imperative camera API (fly to turbine, overview)
+    camera.ts         imperative camera API (fly to turbine, farm, overview)
+    farmAreas.ts      farm outlines derived from the layout, and analytic farm picking
     turbine/          GLB access, per-farm dynamics, instanced LOD, cutaway hero
   intro/            inkstone polishing intro
   ui/               HUD, timeline, toolbar, turbine panel, engineering overlay

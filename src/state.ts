@@ -35,6 +35,8 @@ interface State {
 
   tool: Tool
   hovered: number | null
+  /** Farm area under the pointer, while farms are picked as a whole (from afar). */
+  hoveredFarm: number | null
   selected: number | null
   measure: [x: number, z: number][]
 
@@ -54,6 +56,7 @@ export const useStore = create<State>(() => ({
   speed: 0,
   tool: 'inspect',
   hovered: null,
+  hoveredFarm: null,
   selected: null,
   measure: [],
   engineering: false,

@@ -3,12 +3,13 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { TURBINES } from '../data/windfarms'
 import { useStore } from '../state'
-import { flyToTurbine } from './camera'
+import { flyToFarm, flyToTurbine } from './camera'
+import { FARM_AREAS, pickFarm } from './farmAreas'
 import { pickGround, pickTurbine } from './picking'
 
 const CLICK_SLOP_PX = 6
 
-/** Pointer handling for hover, turbine selection and the measuring tool. */
+/** Pointer handling for hover, farm and turbine selection, and the measuring tool. */
 export function Interaction() {
   const gl = useThree((s) => s.gl)
   const camera = useThree((s) => s.camera)
@@ -31,7 +32,7 @@ export function Interaction() {
     }
     const onLeave = () => {
       pointer.current = null
-      useStore.setState({ hovered: null })
+      useStore.setState({ hovered: null, hoveredFarm: null })
     }
     const onDown = (e: PointerEvent) => {
       down.current = { x: e.clientX, y: e.clientY }
@@ -50,7 +51,11 @@ export function Interaction() {
         if (point) useStore.setState({ measure: measure.length >= 2 ? [point] : [...measure, point] })
         return
       }
-      if (hit !== null) {
+      // From afar a farm is picked as a whole; turbine capsules there span kilometres anyway.
+      const farm = pickFarm(ray)
+      if (farm !== null) {
+        flyToFarm(FARM_AREAS[farm])
+      } else if (hit !== null) {
         useStore.setState({ selected: hit })
         flyToTurbine(hit)
       } else {
@@ -73,10 +78,14 @@ export function Interaction() {
   useFrame(() => {
     if (!pointer.current || down.current) return
     raycaster.current.setFromCamera(new THREE.Vector2(pointer.current.x, pointer.current.y), camera)
-    const hit = pickTurbine(raycaster.current.ray)
-    if (hit !== useStore.getState().hovered) {
-      useStore.setState({ hovered: hit })
-      gl.domElement.style.cursor = hit !== null ? 'pointer' : ''
+    const ray = raycaster.current.ray
+    const measuring = useStore.getState().tool === 'measure'
+    const farm = measuring ? null : pickFarm(ray)
+    const hit = farm === null ? pickTurbine(ray) : null
+    const { hovered, hoveredFarm } = useStore.getState()
+    if (hit !== hovered || farm !== hoveredFarm) {
+      useStore.setState({ hovered: hit, hoveredFarm: farm })
+      gl.domElement.style.cursor = hit !== null || farm !== null ? 'pointer' : ''
     }
   })
 

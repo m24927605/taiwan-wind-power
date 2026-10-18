@@ -3,75 +3,22 @@ import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import type { Line2 } from 'three/examples/jsm/lines/Line2.js'
-import { TURBINES, WIND_FARMS } from '../data/windfarms'
+import { WIND_FARMS } from '../data/windfarms'
+import { useStore } from '../state'
 import { flyToFarm } from './camera'
+import { AREA_LIFT, FARM_AREAS } from './farmAreas'
 
-/** Margin around the outermost turbines, km. */
-const PADDING = 0.8
-const LIFT = 0.03
 const COLOR = '#ffd27a'
 /** Outlines fade out as the camera moves in among the turbines (km from the farm edge). */
 const FADE_NEAR = 2
 const FADE_FAR = 10
 const DECLUTTER_EVERY = 6
 
-interface Bounds {
-  center: [x: number, z: number]
-  /** Westernmost corner: labels hang off it into the open strait. */
-  anchor: [number, number, number]
-  corners: [number, number, number][]
-  width: number
-  depth: number
-  angle: number
-  radius: number
-  capacity: number
-}
-
-/** Rectangle aligned with each farm's array heading, around its turbines plus a margin. */
-function farmBounds(): Bounds[] {
-  return WIND_FARMS.map((farm, f) => {
-    const h = (farm.heading * Math.PI) / 180
-    const along = [Math.sin(h), -Math.cos(h)]
-    const across = [Math.cos(h), Math.sin(h)]
-    let a0 = Infinity
-    let a1 = -Infinity
-    let b0 = Infinity
-    let b1 = -Infinity
-    for (const t of TURBINES) {
-      if (t.farm !== f) continue
-      const a = t.x * along[0] + t.z * along[1]
-      const b = t.x * across[0] + t.z * across[1]
-      a0 = Math.min(a0, a - PADDING)
-      a1 = Math.max(a1, a + PADDING)
-      b0 = Math.min(b0, b - PADDING)
-      b1 = Math.max(b1, b + PADDING)
-    }
-    const point = (a: number, b: number): [number, number, number] => [
-      along[0] * a + across[0] * b,
-      LIFT,
-      along[1] * a + across[1] * b,
-    ]
-    const corners = [point(a0, b0), point(a1, b0), point(a1, b1), point(a0, b1), point(a0, b0)]
-    const c = point((a0 + a1) / 2, (b0 + b1) / 2)
-    const anchor = corners.slice(0, 4).reduce((w, p) => (p[0] < w[0] ? p : w))
-    return {
-      center: [c[0], c[2]],
-      anchor,
-      corners,
-      width: b1 - b0,
-      depth: a1 - a0,
-      angle: -h,
-      radius: Math.hypot(a1 - a0, b1 - b0) / 2,
-      capacity: farm.turbines * farm.ratedMW,
-    }
-  })
-}
-
 const scratch = new THREE.Vector3()
 
 /** Outlines and labels that locate the wind farms from the overview, where turbines are specks. */
 export function FarmBounds() {
-  const bounds = useMemo(farmBounds, [])
+  const bounds = FARM_AREAS
   const lines = useRef<(Line2 | null)[]>([])
   const fills = useRef<(THREE.Mesh | null)[]>([])
   const labels = useRef<(HTMLDivElement | null)[]>([])
@@ -84,11 +31,14 @@ export function FarmBounds() {
       const d = Math.hypot(camera.position.x - b.center[0], camera.position.y, camera.position.z - b.center[1]) - b.radius
       return THREE.MathUtils.smoothstep(d, FADE_NEAR, FADE_FAR)
     })
+    const { hoveredFarm } = useStore.getState()
     fade.forEach((k, i) => {
+      const hot = i === hoveredFarm
       const line = lines.current[i]
-      if (line) line.material.opacity = 0.85 * k
+      if (line) line.material.opacity = (hot ? 1 : 0.85) * k
       const fill = fills.current[i]
-      if (fill) (fill.material as THREE.MeshBasicMaterial).opacity = 0.035 * k
+      if (fill) (fill.material as THREE.MeshBasicMaterial).opacity = (hot ? 0.14 : 0.035) * k
+      labels.current[i]?.classList.toggle('is-hot', hot)
     })
 
     if (frame.current++ % DECLUTTER_EVERY !== 0) return
@@ -130,20 +80,25 @@ export function FarmBounds() {
             ref={(m) => {
               fills.current[i] = m
             }}
-            position={[b.center[0], LIFT * 0.5, b.center[1]]}
+            position={[b.center[0], AREA_LIFT * 0.5, b.center[1]]}
             rotation={[-Math.PI / 2, 0, b.angle]}
           >
             <planeGeometry args={[b.width, b.depth]} />
             <meshBasicMaterial color={COLOR} transparent depthWrite={false} toneMapped={false} />
           </mesh>
-          <Html position={b.anchor} zIndexRange={[15, 0]}>
+          {/* Only the label button takes the pointer; its wrapper would shadow the canvas. */}
+          <Html position={b.anchor} zIndexRange={[9, 0]} style={{ pointerEvents: 'none' }}>
             <div
               ref={(el) => {
                 labels.current[i] = el
               }}
               className="farm-label is-hidden"
             >
-              <button onClick={() => flyToFarm(b.center, b.radius)}>
+              <button
+                onClick={() => flyToFarm(b)}
+                onPointerEnter={() => useStore.setState({ hoveredFarm: i })}
+                onPointerLeave={() => useStore.setState({ hoveredFarm: null })}
+              >
                 <b>{WIND_FARMS[i].name}</b>
                 <span>
                   {WIND_FARMS[i].turbines} 座 · {Math.round(b.capacity)} MW
