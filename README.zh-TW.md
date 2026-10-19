@@ -7,6 +7,8 @@
 打開就是海峽：Sentinel-2 衛星影像鋪滿整座島嶼，依今天浪況預報起伏的 FFT 海面，沿東岸奔流的黑潮，
 以及 513 座隨著此刻海峽真實風向轉動的離岸風機。
 
+**線上體驗：https://m24927605.github.io/taiwan-wind-power/app/**
+
 ## 介紹影片
 
 [![風與潮：從即時網站逐格錄製的兩分鐘影片](docs/teaser.webp)](https://m24927605.github.io/taiwan-wind-power/)
@@ -23,6 +25,9 @@ npm install
 npm run dev            # http://localhost:5199
 npm run build
 ```
+
+每次推送到 `main` 都會自動建置，並發佈到 `gh-pages` 分支的 `app/` 資料夾（`.github/workflows/pages.yml`）；
+影片頁位於該分支的根目錄。
 
 ## 即時資料
 

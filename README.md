@@ -8,6 +8,8 @@ It opens straight onto the strait: Sentinel-2 imagery draped over the island, an
 the Kuroshio current streaming past the east coast, and 513 offshore turbines turning to the
 wind that is blowing over the strait right now.
 
+**Open it live: https://m24927605.github.io/taiwan-wind-power/app/**
+
 ## Film
 
 [![Wind & Tide: a two-minute film recorded from the live site](docs/teaser.webp)](https://m24927605.github.io/taiwan-wind-power/)
@@ -25,6 +27,9 @@ npm install
 npm run dev            # http://localhost:5199
 npm run build
 ```
+
+Every push to `main` builds the app and publishes it to the `gh-pages` branch under `app/`
+(`.github/workflows/pages.yml`); the film page sits at the root of that branch.
 
 ## What is live
 
