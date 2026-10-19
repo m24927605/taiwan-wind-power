@@ -1,6 +1,6 @@
-// Builds public/data/stars.bin from the Yale Bright Star Catalogue, 5th revised edition (Hoffleit &
-// Warren 1991, CDS catalogue V/50): every star down to magnitude 6, as little-endian float32 records
-// of [right ascension rad, declination rad, V magnitude, B-V colour], J2000. Precession since J2000
+// Builds public/data/stars.json from the Yale Bright Star Catalogue, 5th revised edition (Hoffleit &
+// Warren 1991, CDS catalogue V/50): every star down to magnitude 6, as one flat array of
+// [right ascension rad, declination rad, V magnitude, B-V colour] records, J2000. Precession since J2000
 // moves the sky by about a third of a degree, which the scene does not resolve.
 
 import { gunzipSync } from 'node:zlib'
@@ -25,9 +25,9 @@ for (const line of lines) {
   const sign = field(line, 84, 84) === '-' ? -1 : 1
   const decDeg = sign * (Number(field(line, 85, 86)) + Number(field(line, 87, 88)) / 60 + Number(field(line, 89, 90)) / 3600)
   const bv = Number(field(line, 110, 114) || '0.6')
-  records.push(raRad, (decDeg * Math.PI) / 180, vmag, bv)
+  records.push(+raRad.toFixed(5), +((decDeg * Math.PI) / 180).toFixed(5), vmag, bv)
 }
 
 await mkdir('public/data', { recursive: true })
-await writeFile('public/data/stars.bin', Buffer.from(new Float32Array(records).buffer))
-console.log(`public/data/stars.bin: ${records.length / 4} stars`)
+await writeFile('public/data/stars.json', JSON.stringify(records))
+console.log(`public/data/stars.json: ${records.length / 4} stars`)

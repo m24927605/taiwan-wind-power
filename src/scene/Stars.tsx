@@ -11,7 +11,7 @@ import { ATMOSPHERE_GLSL, atmosphere } from './atmosphere'
 // moon they are set in display brightness, since exposure stops adapting at night. Drawn at the far
 // plane after the sky, so terrain and sea hide them and the cloud pass covers them.
 
-const STARS_URL = 'data/stars.bin'
+const STARS_URL = 'data/stars.json'
 
 function createStars(records: Float32Array, pixelRatio: number): THREE.Points {
   const n = records.length / 4
@@ -86,8 +86,8 @@ export function Stars() {
   const [records, setRecords] = useState<Float32Array | null>(null)
   useEffect(() => {
     fetch(STARS_URL)
-      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${STARS_URL}: HTTP ${r.status}`))))
-      .then((b) => setRecords(new Float32Array(b)))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${STARS_URL}: HTTP ${r.status}`))))
+      .then((records: number[]) => setRecords(new Float32Array(records)))
       .catch((error) => console.error('[stars]', error))
   }, [])
   const stars = useMemo(() => (records ? createStars(records, dpr) : null), [records, dpr])
