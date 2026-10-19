@@ -35,10 +35,10 @@ Every push to `main` builds the app and publishes it to the `gh-pages` branch un
 
 | Layer | Source | Notes |
 | --- | --- | --- |
-| Bathymetry | AWS Terrain Tiles (Terrarium, z9) | Baked by `scripts/build-elevation.ts` into a 1024² Terrarium-encoded PNG (1.35 MB, lossless metres) |
-| Land surface | AWS Terrain Tiles (Terrarium, z11) | Baked by `scripts/build-terrain.ts` into a simplified 615k-triangle GLB (1.8 MB), true scale |
+| Bathymetry | AWS Terrain Tiles (Terrarium, z9) | Baked by `scripts/build-elevation.ts` into a 1024² Terrarium-encoded PNG (1.5 MB, lossless metres) |
+| Land surface | AWS Terrain Tiles (Terrarium, z11) | Baked by `scripts/build-terrain.ts` into a simplified 1.13M-triangle GLB (3.1 MB), true scale |
 | Land imagery | Sentinel-2 cloudless 2024, EOX | Baked by `scripts/build-imagery.ts` into a 4096² WebP over the domain (1.2 MB), a 4096 × 8192 WebP over the island (4.2 MB, desktop only) and a 4096² normal map |
-| Ocean currents | Open-Meteo Marine API | 14 × 14 grid over the domain, hourly, yesterday through three days ahead |
+| Ocean currents | Open-Meteo Marine API | 24 × 14 grid over the domain (about 36 km apart), hourly, yesterday through three days ahead |
 | Sea state | Open-Meteo Marine API | Wind sea and swell (height, period, direction), each a median over the strait; the two peaks of the wave spectrum |
 | Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm, output, whitecaps and cloud drift |
 | Clouds | Himawari-9 AHI via NASA GIBS | The only clouds: hourly scans over 113.5–131.5 E, 16.5–33 N (everything the camera can see), about 30 minutes behind real time, loaded as scene time needs them. Band 13 infrared (brightness temperature, lapse-corrected over land) and, by day, band 3 visible place the cumulus, set its height and lay the cirrus. Hours with no scan have no clouds |
@@ -64,7 +64,13 @@ coordinates are an approximate array layout, and the UI says so.
   inside an outline to fly over that farm; once there, clicks pick individual turbines again.
   Outlines fade out as the camera moves in among the turbines.
 - Once the camera leaves the island-wide view, a "回到台灣全景" pill at the top of the screen
-  flies back to it.
+  flies back to it. The island-wide view is north up, from the south with a 10° tilt, as far out
+  as the domain allows for the screen's shape.
+- Everything on screen is mapped data: the domain (116.6–125 E, 21.4–25.8 N) is wide enough for
+  a north-up view of the whole island on a wide screen, and no pose may show ground outside it
+  (`viewInsideDomain` in `scene/camera.ts`); a drag, pinch or wheel that would snaps back. Below
+  3 km the view may run to the hazy horizon while the camera stays 30 km inside. Scripted flights
+  orbit their target with the tilt following the zoom, so they stay inside too.
 - `M` measures great-circle distance and bearing. Points snap to turbines.
 - `E` toggles engineering mode, a diagnostic render plus live renderer statistics.
 - `Space` plays or pauses the time-lapse, `R` returns to the overview, and `Esc` clears the
@@ -157,7 +163,7 @@ turbines around a camera near the sea, and they lie down in the shallows so they
 coast.
 
 **Kuroshio on the GPU.** Particle state (domain uv, age, lifetime) ping-pongs between RGBA32F
-render targets in `GPUComputationRenderer`. The current field is a 14 × 14 RG16F texture with
+render targets in `GPUComputationRenderer`. The current field is a 24 × 14 RG16F texture with
 hardware bilinear filtering and two hourly frames blended by a uniform. Land masking samples
 the shared elevation texture. Particles render as instanced streak quads. Their length follows
 current speed and camera distance, so they read as flow in the overview; they fade out as the
@@ -168,13 +174,15 @@ as streaks shooting across the water.
 isobaths, surf, the calm shallows and the particle land mask.
 
 **Terrain as an asset.** The land is modelled at true scale, with no vertical exaggeration. The
-mesh starts as a 2048² z11 grid cut down to the cells that touch land (1.76M triangles).
+mesh starts as a 3584 × 2048 z11 grid (about 240 m apart) cut down to the cells that touch land
+(3.2M triangles).
 meshoptimizer then simplifies it to an absolute error of 25 m, below the source grid spacing, so
-plains collapse to a few large triangles while ridgelines keep their detail: 615k triangles,
-quantized and meshopt-compressed to 1.8 MB. Shading comes from the Sentinel-2 drape and a 4096²
+plains collapse to a few large triangles while ridgelines keep their detail: 1.13M triangles,
+quantized and meshopt-compressed to 3.1 MB. Coastal cells slope down to sea vertices under the
+water; the terrain draws nothing below the land's 4 m lift, so the ocean owns the coastline. Shading comes from the Sentinel-2 drape and a 4096²
 normal map, with part of the imagery's baked 10:30 sun divided out before the scene sun is
 applied. The island gets its own z12 drape at about 50 m per texel, faded in at the edge of its
-box; phones and GPUs without 8192 textures keep the 110 m domain drape. Night lights are not hand-placed: they come from pixels that are bright, grey and flat
+box; phones and GPUs without 8192 textures keep the domain drape (about 200 m per texel east-west). Night lights are not hand-placed: they come from pixels that are bright, grey and flat
 in the imagery, which is the real urban fabric.
 
 **Physical atmosphere.** The sky is Hillaire's (2020) model in kilometres: transmittance and

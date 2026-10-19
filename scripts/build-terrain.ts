@@ -12,7 +12,9 @@ import { DOMAIN, WORLD } from '../src/geo/domain.ts'
 import { fetchMosaic, forEachSample, terrarium } from './tiles.ts'
 
 const ZOOM = 11
-const GRID = 2048
+/** About 240 m between grid points both ways, like the z11 source resampled. */
+const GRID_Z = 2048
+const GRID_X = Math.round((GRID_Z * WORLD.width) / WORLD.depth)
 /** Land sinks below the sea near the domain border so cropped coastlines end softly. */
 const EDGE_TAPER = 0.035
 /** Land sits a hair above the ocean plane; sea vertices of coastal cells sit below it. */
@@ -23,39 +25,39 @@ const MAX_ERROR_KM = 0.025
 
 const elevation = await fetchMosaic(ZOOM, terrarium.url(ZOOM), 1, terrarium.decode)
 const sample = new Float32Array(1)
-const heights = new Float32Array(GRID * GRID)
-forEachSample(DOMAIN, GRID, GRID, (i, j, lon, lat) => {
+const heights = new Float32Array(GRID_X * GRID_Z)
+forEachSample(DOMAIN, GRID_X, GRID_Z, (i, j, lon, lat) => {
   elevation.sample(lon, lat, sample)
-  const u = i / (GRID - 1)
-  const v = j / (GRID - 1)
+  const u = i / (GRID_X - 1)
+  const v = j / (GRID_Z - 1)
   const edge = Math.min(u, v, 1 - u, 1 - v) / EDGE_TAPER
   const taper = edge >= 1 ? 1 : edge * edge * (3 - 2 * edge)
-  heights[j * GRID + i] = sample[0] > 0 ? sample[0] * taper : 0
+  heights[j * GRID_X + i] = sample[0] > 0 ? sample[0] * taper : 0
 })
 
 // Keep cells that touch land, re-indexing only the vertices they use.
-const remap = new Int32Array(GRID * GRID).fill(-1)
+const remap = new Int32Array(GRID_X * GRID_Z).fill(-1)
 const positions: number[] = []
 const indices: number[] = []
 const vertex = (k: number) => {
   if (remap[k] < 0) {
     remap[k] = positions.length / 3
-    const i = k % GRID
-    const j = Math.floor(k / GRID)
+    const i = k % GRID_X
+    const j = Math.floor(k / GRID_X)
     const h = heights[k]
     positions.push(
-      WORLD.minX + (i / (GRID - 1)) * WORLD.width,
+      WORLD.minX + (i / (GRID_X - 1)) * WORLD.width,
       h > 0 ? h / 1000 + LAND_LIFT_KM : -SEA_DROP_KM,
-      WORLD.minZ + (j / (GRID - 1)) * WORLD.depth,
+      WORLD.minZ + (j / (GRID_Z - 1)) * WORLD.depth,
     )
   }
   return remap[k]
 }
-for (let j = 0; j < GRID - 1; j++) {
-  for (let i = 0; i < GRID - 1; i++) {
-    const a = j * GRID + i
+for (let j = 0; j < GRID_Z - 1; j++) {
+  for (let i = 0; i < GRID_X - 1; i++) {
+    const a = j * GRID_X + i
     const b = a + 1
-    const c = a + GRID
+    const c = a + GRID_X
     const d = c + 1
     if (Math.max(heights[a], heights[b], heights[c], heights[d]) <= 0) continue
     indices.push(vertex(a), vertex(c), vertex(b), vertex(b), vertex(c), vertex(d))

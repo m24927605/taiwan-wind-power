@@ -6,7 +6,8 @@ import { WIND_FARMS } from './windfarms'
 // three days ahead. Where Open-Meteo cannot be reached (a sandboxed host), a snapshot bundled at deploy
 // time by scripts/snapshot-weather.ts stands in, and says so.
 
-export const CURRENT_GRID = { cols: 14, rows: 14 } as const
+/** About 36 km between grid points both ways over the domain. */
+export const CURRENT_GRID = { cols: 24, rows: 14 } as const
 
 export interface Weather {
   /** Hourly timestamps, unix seconds. */

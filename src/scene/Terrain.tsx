@@ -66,6 +66,10 @@ function createMaterial(imagery: THREE.Texture, normals: THREE.Texture, detail: 
       }
 
       void main() {
+        // Coastal cells slope down from the land to sea vertices under the water. Below the land's
+        // lift that slope is sea: leave it to the ocean, or it shows as pale bands that fight the
+        // waves for depth and flicker.
+        if (vWorld.y < ${LAND_LIFT_KM.toFixed(4)}) discard;
         vec2 uv = (vWorld.xz - uDomain.xy) / uDomain.zw;
         vec2 nxz = texture2D(uNormals, uv).rg * 2.0 - 1.0;
         vec3 n = vec3(nxz.x, sqrt(max(1.0 - dot(nxz, nxz), 0.0)), nxz.y);

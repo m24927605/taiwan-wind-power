@@ -2,9 +2,11 @@
 // World units are kilometres on a local equirectangular projection centred on Taiwan:
 // +x points east, -z points north, +y is up.
 
+// Wide enough east-west that a north-up view of the whole island on a wide screen shows nothing
+// but mapped data (see camera.ts); centred on 120.8 E like the island and the farms.
 export const DOMAIN = {
-  west: 118.6,
-  east: 123.0,
+  west: 116.6,
+  east: 125.0,
   south: 21.4,
   north: 25.8,
 } as const

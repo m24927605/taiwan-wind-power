@@ -85,7 +85,9 @@ vec2 cloudSegment(vec3 d, float h) {
   return vec2(max(min(tb, tt), 0.0), max(tb, tt));
 }
 
-float cloudDensity(vec3 p, bool detail) {
+// detail, 0..1, is how much fine erosion to apply: full near the eye, fading out with distance so
+// no edge sweeps across the clouds as the camera climbs.
+float cloudDensity(vec3 p, float detail) {
   float h01 = (p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM);
   if (h01 <= 0.0 || h01 >= 1.0) return 0.0;
   vec2 q = p.xz - uCloudOffset;
@@ -96,7 +98,9 @@ float cloudDensity(vec3 p, bool detail) {
   // Warp the lookup by a few kilometres so edges follow the noise rather than the 2 km pixels.
   vec3 sat = satelliteCloud(p.xz + (weather.gb - 0.5) * 6.0);
   // The noise varies the cover inside the satellite's cloud and adds none where it saw clear sky.
-  float coverage = clamp(sat.r * (0.5 + weather.r * 0.6), 0.0, 1.0) * satW;
+  // A trace of cover would only break into specks that wink in and out, so it starts from 15%.
+  float cover = smoothstep(0.15, 0.4, sat.r) * sat.r;
+  float coverage = clamp(cover * (0.5 + weather.r * 0.6), 0.0, 1.0) * satW;
   float top = mix(0.35, 1.0, sat.g);
   float profile = clamp(h01 / 0.07, 0.0, 1.0) * clamp(remap(h01, top * 0.45, top, 1.0, 0.0), 0.0, 1.0);
   vec4 s = textureLod(uCloudShape, vec3(q.x, p.y, q.y) / 4.8, 0.0);
@@ -104,17 +108,17 @@ float cloudDensity(vec3 p, bool detail) {
   float base = remap(s.r, fbm - 1.0, 1.0, 0.0, 1.0) * profile;
   base = remap(base, 1.0 - coverage, 1.0, 0.0, 1.0) * coverage;
   if (base <= 0.0) return 0.0;
-  if (detail) {
+  if (detail > 0.0) {
     vec3 dn = textureLod(uCloudDetail, vec3(q.x, p.y - uTime * 0.0015, q.y) / 0.72, 0.0).rgb;
     float dfbm = dn.r * 0.625 + dn.g * 0.25 + dn.b * 0.125;
     // Wispy at the base, billowing toward the top.
     float erode = mix(dfbm, 1.0 - dfbm, clamp(h01 * 4.0, 0.0, 1.0));
-    base = remap(base, erode * 0.38, 1.0, 0.0, 1.0);
+    base = remap(base, erode * 0.38 * detail, 1.0, 0.0, 1.0);
   }
   return clamp(base, 0.0, 1.0);
 }
 
-vec3 cloudLight(vec3 p, float dens, float cosT, int lightSteps, bool detail) {
+vec3 cloudLight(vec3 p, float dens, float cosT, int lightSteps, float detail) {
   float h01 = clamp((p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM), 0.0, 1.0);
   float od = 0.0;
   float stepL = 0.045;
@@ -122,7 +126,7 @@ vec3 cloudLight(vec3 p, float dens, float cosT, int lightSteps, bool detail) {
   for (int j = 0; j < 6; j++) {
     if (j >= lightSteps) break;
     q += uSunDir * stepL;
-    od += cloudDensity(q, detail && j < 2) * stepL;
+    od += cloudDensity(q, j < 2 ? detail : 0.0) * stepL;
     stepL *= 1.85;
   }
   od *= CLOUD_EXT;
@@ -159,7 +163,7 @@ vec4 marchClouds(vec3 cam, vec3 dir, float tLimit, int maxSteps, int lightSteps,
     if (i >= steps) break;
     float t = seg.x + (float(i) + jitter) * dt;
     vec3 p = vec3(cam.x + dir.x * t, cloudAltitude(t, dir.y, cam.y), cam.z + dir.z * t);
-    bool near = detail && t < 24.0;
+    float near = detail ? 1.0 - smoothstep(16.0, 28.0, t) : 0.0;
     float dens = cloudDensity(p, near);
     if (dens <= 0.002) continue;
     float sT = exp(-dens * CLOUD_EXT * dt);
@@ -205,7 +209,7 @@ float cloudShadow(vec3 p) {
     float h = mix(CLOUD_BOTTOM, CLOUD_TOP, (float(i) + 0.5) / float(taps));
     vec3 q = p + uSunDir * ((h - p.y) / sy);
     q.y = h;
-    od += cloudDensity(q, false);
+    od += cloudDensity(q, 0.0);
   }
   float shadow = exp(-od * CLOUD_EXT * (CLOUD_TOP - CLOUD_BOTTOM) / float(taps) / sy * 0.6);
   // Thinned like the clouds themselves from the map view (CloudPass), so the map stays readable.

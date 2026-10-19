@@ -209,11 +209,14 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
         // depth-limited breaking on the shoals, which spill once waves grow to a fraction of the depth.
         float J = 1.0 + (texture(uDisp0, vXZ * uTileScale.x).w - 1.0) * resolved.x
           + (texture(uDisp1, vXZ * uTileScale.y).w - 1.0) * resolved.y + (texture(uDisp2, vXZ * uTileScale.z).w - 1.0) * resolved.z;
-        float breaking = smoothstep(0.25, 0.8, uHs / max(depth, 0.1));
-        float foam = max(clamp((uFoamThreshold + breaking * 0.9 - J) * 2.5, 0.0, 1.0),
-          s0.w * resolved.x + s1.w * 0.7 * resolved.y + s2.w * 0.4 * resolved.z);
-        // Foam too fine to resolve still whitens the water on average.
-        foam = clamp(foam + breaking * 0.1 * (1.0 - resolved.x), 0.0, 1.0);
+        // Breakers need water: the surf zone is where waves reach a fraction of the depth, not the
+        // wet flats of the shallowest shore, which the bathymetry grid reads as almost no depth.
+        float breaking = smoothstep(0.4, 0.9, uHs / max(depth, 0.1)) * smoothstep(0.2, 0.8, depth);
+        float whitecap = clamp((uFoamThreshold - J) * 2.5, 0.0, 1.0);
+        // Surf shows its pattern only where the waves are resolved; farther out, where the pattern
+        // is finer than a pixel and would shimmer from frame to frame, it is its average cover.
+        float surf = clamp((uFoamThreshold + 0.9 - J) * 2.5, 0.0, 1.0) * breaking * resolved.x + breaking * 0.3 * (1.0 - resolved.x);
+        float foam = max(max(whitecap, surf), s0.w * resolved.x + s1.w * 0.7 * resolved.y + s2.w * 0.4 * resolved.z);
         col = mix(col, 0.9 / PI * (downwelling + sun * max(dot(N, uSunDir), 0.0) * 0.3), foam * 0.9);
 
         // Cartographic isobaths: 50 m on the shelf, 500 m on the slope, only in the map view.
