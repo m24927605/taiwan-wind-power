@@ -13,6 +13,12 @@ const COLOR = '#ffd27a'
 /** Outlines fade out as the camera moves in among the turbines (km from the farm edge). */
 const FADE_NEAR = 2
 const FADE_FAR = 10
+/**
+ * And as it comes down toward the sea (km altitude): seen edge-on from low over the water, the
+ * far outlines would stack into one bright line along the coast.
+ */
+const FADE_LOW = 1.5
+const FADE_HIGH = 6
 const DECLUTTER_EVERY = 6
 
 const scratch = new THREE.Vector3()
@@ -29,9 +35,10 @@ export function FarmBounds() {
   const priority = useMemo(() => bounds.map((_, i) => i).sort((a, b) => bounds[b].capacity - bounds[a].capacity), [bounds])
 
   useFrame(({ camera, size }) => {
+    const height = THREE.MathUtils.smoothstep(camera.position.y, FADE_LOW, FADE_HIGH)
     const fade = bounds.map((b) => {
       const d = Math.hypot(camera.position.x - b.center[0], camera.position.y, camera.position.z - b.center[1]) - b.radius
-      return THREE.MathUtils.smoothstep(d, FADE_NEAR, FADE_FAR)
+      return THREE.MathUtils.smoothstep(d, FADE_NEAR, FADE_FAR) * height
     })
     const { hoveredFarm } = useStore.getState()
     fade.forEach((k, i) => {
