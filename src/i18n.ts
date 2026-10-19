@@ -83,11 +83,11 @@ const zh = {
   lod2: 'LOD2 光點 / 剔除',
   pipeline: [
     ['大氣', 'Hillaire 2020 穿透率／多重散射／天空 LUT · 逐像素空氣透視'],
-    ['雲', '體積雲光線步進 · 棋盤式時間累積 · 雙邊升採樣'],
+    ['雲', '向日葵 9 號紅外線與可見光雲圖定位 · 體積雲光線步進 · 雙邊升採樣'],
     ['海面', '雙峰頻譜 FFT · 三層位移 · Jacobian 白浪與殘留泡沫'],
     ['風機', '程序建模 → AO 烘焙 → meshopt LOD → 量化 + EXT_meshopt GLB'],
     ['風場', '513 座 · 2 級 LOD instancing · 偏航與轉子在 vertex shader 計算'],
-    ['資料', 'Open-Meteo Marine + Forecast · 瀏覽器快取 30 分鐘'],
+    ['資料', 'Open-Meteo Marine + Forecast · NASA GIBS 向日葵 9 號 · 瀏覽器快取 30 分鐘'],
   ] as [string, string][],
 
   compass8: ['北', '東北', '東', '東南', '南', '西南', '西', '西北'],
@@ -185,11 +185,11 @@ const en: Messages = {
   lod2: 'LOD2 point / culled',
   pipeline: [
     ['Sky', 'Hillaire 2020 transmittance / multi-scattering / sky LUTs · per-pixel aerial perspective'],
-    ['Clouds', 'Volumetric ray march · checkerboard temporal accumulation · bilateral upsample'],
+    ['Clouds', 'Placed by Himawari-9 infrared and visible imagery · volumetric ray march · bilateral upsample'],
     ['Sea', 'Two-peak spectrum FFT · three displaced cascades · Jacobian whitecaps and foam trails'],
     ['Turbine', 'Procedural model → baked AO → meshopt LOD → quantized + EXT_meshopt GLB'],
     ['Farms', '513 turbines · 2 LOD levels instanced · yaw and rotor in the vertex shader'],
-    ['Data', 'Open-Meteo Marine + Forecast · cached in the browser for 30 minutes'],
+    ['Data', 'Open-Meteo Marine + Forecast · Himawari-9 via NASA GIBS · cached in the browser for 30 minutes'],
   ],
 
   compass8: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'],

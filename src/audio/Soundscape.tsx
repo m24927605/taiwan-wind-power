@@ -5,11 +5,10 @@ import { seaAt } from '../data/weather'
 import { TURBINES } from '../data/windfarms'
 import { atmosphere } from '../scene/atmosphere'
 import { TURBINE } from '../scene/turbine/spec'
-import { TURBINE_SCALE, farmDynamics } from '../scene/turbine/dynamics'
+import { farmDynamics, turbineScale } from '../scene/turbine/dynamics'
 import { useStore } from '../state'
 import { updateSound } from './engine'
 
-const HUB_Y = TURBINE.hubHeight * TURBINE_SCALE
 /** The soundscape follows the scene a few times a second; its parameters glide in between. */
 const EVERY = 4
 
@@ -28,7 +27,7 @@ export function Soundscape() {
     let best = Infinity
     for (let i = 0; i < TURBINES.length; i++) {
       const t = TURBINES[i]
-      const d = (t.x - p.x) ** 2 + (HUB_Y - p.y) ** 2 + (t.z - p.z) ** 2
+      const d = (t.x - p.x) ** 2 + (TURBINE.hubHeight * turbineScale(t.farm) - p.y) ** 2 + (t.z - p.z) ** 2
       if (d < best) {
         best = d
         nearest = i
@@ -36,7 +35,7 @@ export function Soundscape() {
     }
     const turbine = TURBINES[nearest]
     scratch.right.set(1, 0, 0).applyQuaternion(camera.quaternion)
-    scratch.to.set(turbine.x - p.x, HUB_Y - p.y, turbine.z - p.z).normalize()
+    scratch.to.set(turbine.x - p.x, TURBINE.hubHeight * turbineScale(turbine.farm) - p.y, turbine.z - p.z).normalize()
     let waveHeight = 1
     if (weather) {
       const { windSea, swell } = seaAt(weather, time)

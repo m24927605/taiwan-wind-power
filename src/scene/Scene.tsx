@@ -17,6 +17,7 @@ import { Measure } from './Measure'
 import { Ocean } from './ocean/Ocean'
 import { SceneClock } from './SceneClock'
 import { Sky, SkyEnvironment } from './Sky'
+import { Stars } from './Stars'
 import { StatsProbe } from './StatsProbe'
 import { Terrain } from './Terrain'
 import { HeroTurbine } from './turbine/HeroTurbine'
@@ -55,6 +56,7 @@ export function Scene() {
       {import.meta.env.DEV && <DevProbe />}
       <CameraRig />
       <Sky />
+      <Stars />
       <SkyEnvironment />
       {elevation && <Ocean elevation={elevation} waveResolution={WAVE_RESOLUTION} />}
       {/* Without the island drape the terrain still renders with the domain imagery. */}

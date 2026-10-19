@@ -6,14 +6,13 @@ import { useStore } from '../../state'
 import { atmosphere } from '../atmosphere'
 import { LOD_MID, LOD_NEAR, lodCounts } from './lod'
 import { TURBINE } from './spec'
-import { TURBINE_SCALE, farmDynamics } from './dynamics'
+import { farmDynamics, turbineScale, turbineView } from './dynamics'
 import { useTurbineModel } from './useTurbineModel'
 import { TURBINE_PAINT, applyWeathering } from './weathering'
 
 const REBUCKET_EVERY = 3
 
 const COUNT = TURBINES.length
-const HUB_Y = TURBINE.hubHeight * TURBINE_SCALE
 const LOD_TINTS = [new THREE.Color(0x35e0ff), new THREE.Color(0xffb020)]
 
 /** Shared per-frame uniforms for every instanced turbine material. */
@@ -109,14 +108,15 @@ function createLights(): THREE.Points {
   const positions = new Float32Array(COUNT * 3)
   const seeds = new Float32Array(COUNT)
   TURBINES.forEach((t, i) => {
-    positions.set([t.x, (TURBINE.hubHeight + 5.5) * TURBINE_SCALE, t.z], i * 3)
+    // Height at the current exaggeration of 1: the shader scales it with the turbines.
+    positions.set([t.x, (TURBINE.hubHeight + 5.5) * turbineScale(t.farm) / turbineView.exaggeration, t.z], i * 3)
     seeds[i] = t.farm
   })
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   g.setAttribute('aFarm', new THREE.BufferAttribute(seeds, 1))
   const material = new THREE.ShaderMaterial({
-    uniforms: { ...atmosphere, uPixelRatio: { value: 1 }, uMid: { value: LOD_MID } },
+    uniforms: { ...atmosphere, uPixelRatio: { value: 1 }, uMid: { value: LOD_MID }, uExaggeration: { value: 1 } },
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -126,12 +126,14 @@ function createLights(): THREE.Points {
       uniform float uPixelRatio;
       uniform float uMid;
       uniform vec3 uCameraPos;
+      uniform float uExaggeration;
       attribute float aFarm;
       varying vec3 vColor;
       void main() {
-        vec4 mv = viewMatrix * vec4(position, 1.0);
+        vec3 p = vec3(position.x, position.y * uExaggeration, position.z);
+        vec4 mv = viewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
-        float dist = length(position - uCameraPos);
+        float dist = length(p - uCameraPos);
         // Synchronised flashing per farm (1 s on, 1 s off), as required for offshore arrays.
         float flash = step(0.5, fract(uTime * 0.5 + aFarm * 0.13));
         vec3 day = vec3(0.92, 0.95, 0.97) * 0.55 * smoothstep(uMid * 0.8, uMid * 1.1, dist);
@@ -184,22 +186,24 @@ export function WindFarms() {
   useFrame(() => {
     const { hovered, selected } = useStore.getState()
     turbineUniforms.uHighlight.value = hovered ?? -1
+    ;(lights.material as THREE.ShaderMaterial).uniforms.uExaggeration.value = turbineView.exaggeration
 
     if (frame.current++ % REBUCKET_EVERY !== 0) return
     const { m, frustum, pv, sphere } = scratch
     pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
     frustum.setFromProjectionMatrix(pv)
     const counts = [0, 0]
-    sphere.radius = (TURBINE.hubHeight + TURBINE.rotorRadius) * TURBINE_SCALE * 0.75
     for (const t of TURBINES) {
       if (t.index === selected) continue
-      sphere.center.set(t.x, HUB_Y * 0.7, t.z)
+      const s = turbineScale(t.farm)
+      sphere.radius = (TURBINE.hubHeight + TURBINE.rotorRadius) * s * 0.75
+      sphere.center.set(t.x, TURBINE.hubHeight * s * 0.7, t.z)
       if (!frustum.intersectsSphere(sphere)) continue
       const d = camera.position.distanceTo(sphere.center)
       if (d > LOD_MID) continue
       const lod = d < LOD_NEAR ? 0 : 1
       const k = counts[lod]++
-      m.makeScale(TURBINE_SCALE, TURBINE_SCALE, TURBINE_SCALE).setPosition(t.x, 0, t.z)
+      m.makeScale(s, s, s).setPosition(t.x, 0, t.z)
       for (const b of buckets[lod]) {
         b.mesh.setMatrixAt(k, m)
         b.farm.setX(k, t.farm)

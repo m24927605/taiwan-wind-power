@@ -1,11 +1,13 @@
 import * as THREE from 'three'
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js'
+import { WORLD } from '../geo/domain'
 
 // Cumulus in a spherical shell over the strait, and cirrus above it, in world units (km). Shape
 // and erosion after Schneider (Nubis): Perlin-Worley noise carved by Worley detail, generated once
 // on the GPU. CLOUDS_GLSL builds on ATMOSPHERE_GLSL (it lights the clouds through the same air) and
 // is shared by the cloud pass, the sky, the reflection environment and, for cloud shadows, the
-// terrain and the sea.
+// terrain and the sea. Where Himawari frames are loaded they say where the cloud is, how tall it
+// grows and where the cirrus lies; the noise only breaks their 2 km pixels into cloud.
 
 export const CLOUD_BOTTOM = 0.9
 export const CLOUD_TOP = 2.9
@@ -22,6 +24,14 @@ export const clouds = {
   uCirrus: { value: 0.3 },
   /** Wind drift of the cloud field, km. */
   uCloudOffset: { value: new THREE.Vector2() },
+  /** The Himawari frames on either side of scene time (see data/satellite.ts) and the weight of B. */
+  uSatA: { value: null as THREE.Texture | null },
+  uSatB: { value: null as THREE.Texture | null },
+  uSatBlend: { value: 0 },
+  /** 0 where the forecast shapes the clouds, 1 where the satellite does. */
+  uSatWeight: { value: 0 },
+  /** World x and z of the domain's north-west corner, and the reciprocal of its width and depth. */
+  uSatBounds: { value: new THREE.Vector4(WORLD.minX, WORLD.minZ, 1 / WORLD.width, 1 / WORLD.depth) },
 }
 
 export const CLOUDS_GLSL = /* glsl */ `
@@ -33,6 +43,11 @@ uniform float uCloudsReady;
 uniform float uCoverage;
 uniform float uCirrus;
 uniform vec2 uCloudOffset;
+uniform sampler2D uSatA;
+uniform sampler2D uSatB;
+uniform float uSatBlend;
+uniform float uSatWeight;
+uniform vec4 uSatBounds;
 
 const float CLOUD_BOTTOM = ${CLOUD_BOTTOM.toFixed(2)};
 const float CLOUD_TOP = ${CLOUD_TOP.toFixed(2)};
@@ -40,6 +55,12 @@ const float CLOUD_TOP = ${CLOUD_TOP.toFixed(2)};
 const float CLOUD_EXT = 45.0;
 
 float remap(float v, float a, float b, float c, float d) { return c + (v - a) / (b - a) * (d - c); }
+
+// Satellite cloud at a world position: low cover, top height within the layer, high cover.
+vec3 satelliteCloud(vec2 xz) {
+  vec2 uv = (xz - uSatBounds.xy) * uSatBounds.zw;
+  return mix(textureLod(uSatA, uv, 0.0).rgb, textureLod(uSatB, uv, 0.0).rgb, uSatBlend);
+}
 
 // From the overview the map matters more than the weather: clouds thin out with the eye's altitude.
 float cloudFade() { return 1.0 - 0.65 * smoothstep(15.0, 120.0, uCameraPos.y); }
@@ -64,6 +85,13 @@ float cloudDensity(vec3 p, bool detail) {
   vec3 weather = textureLod(uCloudWeather, q / 52.0, 0.0).rgb;
   float coverage = clamp(uCoverage + (weather.r - 0.5) * 0.9, 0.0, 1.0);
   float top = mix(0.35, 1.0, weather.g);
+  if (uSatWeight > 0.0) {
+    // Warp the lookup by a few kilometres so edges follow the noise rather than the 2 km pixels.
+    vec3 sat = satelliteCloud(p.xz + (weather.gb - 0.5) * 6.0);
+    // The noise varies the cover inside the satellite's cloud and adds none where it saw clear sky.
+    coverage = mix(coverage, clamp(sat.r * (0.5 + weather.r * 0.6), 0.0, 1.0), uSatWeight);
+    top = mix(top, mix(0.35, 1.0, sat.g), uSatWeight);
+  }
   float profile = clamp(h01 / 0.07, 0.0, 1.0) * clamp(remap(h01, top * 0.45, top, 1.0, 0.0), 0.0, 1.0);
   vec4 s = textureLod(uCloudShape, vec3(q.x, p.y, q.y) / 4.8, 0.0);
   float fbm = s.g * 0.625 + s.b * 0.25 + s.a * 0.125;
@@ -147,11 +175,13 @@ vec4 marchClouds(vec3 cam, vec3 dir, float tLimit, int maxSteps, int lightSteps,
 
 // Wind-combed cirrus on a flat sheet at 8.5 km.
 vec3 applyCirrus(vec3 col, vec3 d, vec3 cam) {
-  if (uCloudsReady < 0.5 || uCirrus <= 0.0 || cam.y > 8.5 || d.y < 0.004) return col;
+  if (uCloudsReady < 0.5 || (uCirrus <= 0.0 && uSatWeight <= 0.0) || cam.y > 8.5 || d.y < 0.004) return col;
   float t = min((8.5 - cam.y) / d.y, 400.0);
-  vec2 uv = (cam.xz + d.xz * t - uCloudOffset * 1.6) / 70.0;
+  vec2 xz = cam.xz + d.xz * t;
+  vec2 uv = (xz - uCloudOffset * 1.6) / 70.0;
   float n = textureLod(uCloudWeather, uv * vec2(1.0, 3.0), 0.0).b * 0.6 + textureLod(uCloudWeather, uv * vec2(3.0, 11.0) + 0.37, 0.0).b * 0.4;
-  float a = clamp((n - 1.0 + uCirrus * 0.62) * 2.6, 0.0, 0.85) * smoothstep(0.004, 0.09, d.y);
+  float cirrus = uSatWeight > 0.0 ? mix(uCirrus, satelliteCloud(xz).b, uSatWeight) : uCirrus;
+  float a = clamp((n - 1.0 + cirrus * 0.62) * 2.6, 0.0, 0.85) * smoothstep(0.004, 0.09, d.y);
   float c = dot(d, uSunDir);
   vec3 light = sunIrradiance(8.5) * (0.6 * hg(0.75, c) + 0.4 * hg(-0.1, c)) * 0.5 + skyIrradiance() / PI * 0.9;
   return mix(col, light, a);

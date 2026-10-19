@@ -42,7 +42,7 @@ export function CameraRig() {
     <CameraControls
       ref={ref}
       makeDefault
-      minDistance={0.25}
+      minDistance={0.06}
       maxDistance={650}
       maxPolarAngle={Math.PI * 0.47}
       dollyToCursor

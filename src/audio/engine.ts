@@ -13,7 +13,7 @@ const DEFAULT_LEVELS: Record<Channel, number> = { master: 0.8, music: 0.4, ambie
 const STORAGE_KEY = 'wind-tide:sound'
 
 interface SoundState {
-  /** The viewer wants sound; it starts on their next gesture if the page loaded with it on. */
+  /** The viewer wants sound (on by default); browsers hold it until their first gesture. */
   enabled: boolean
   levels: Record<Channel, number>
   panelOpen: boolean
@@ -26,7 +26,7 @@ function saved(): Pick<SoundState, 'enabled' | 'levels'> {
   } catch {
     // Storage blocked or corrupt: defaults.
   }
-  return { enabled: false, levels: DEFAULT_LEVELS }
+  return { enabled: true, levels: DEFAULT_LEVELS }
 }
 
 export const useSound = create<SoundState>(() => ({ ...saved(), panelOpen: false }))
@@ -340,7 +340,7 @@ export function setSoundEnabled(enabled: boolean) {
   ensureEngine().setLevels(useSound.getState().levels, enabled)
 }
 
-// A viewer who left sound on gets it back on their first gesture of the next visit.
+// Sound is on unless the viewer turned it off; it starts on their first gesture of the visit.
 if (typeof window !== 'undefined' && useSound.getState().enabled) {
   const resume = () => {
     window.removeEventListener('pointerdown', resume)

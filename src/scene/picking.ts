@@ -2,13 +2,11 @@ import * as THREE from 'three'
 import type { Elevation } from '../data/elevation'
 import { TURBINES } from '../data/windfarms'
 import { TURBINE } from './turbine/spec'
-import { TURBINE_SCALE } from './turbine/dynamics'
+import { turbineScale } from './turbine/dynamics'
 
 const base = new THREE.Vector3()
 const top = new THREE.Vector3()
 const onRay = new THREE.Vector3()
-const HUB_Y = TURBINE.hubHeight * TURBINE_SCALE
-const ROTOR_R = TURBINE.rotorRadius * TURBINE_SCALE
 
 /**
  * Analytic turbine picking: instanced turbines are yawed and spun in the vertex shader, so mesh
@@ -19,11 +17,13 @@ export function pickTurbine(ray: THREE.Ray): number | null {
   let best: number | null = null
   let bestT = Infinity
   for (const t of TURBINES) {
+    const s = turbineScale(t.farm)
+    const rotorR = TURBINE.rotorRadius * s
     base.set(t.x, 0, t.z)
-    top.set(t.x, HUB_Y + ROTOR_R * 0.6, t.z)
+    top.set(t.x, TURBINE.hubHeight * s + rotorR * 0.6, t.z)
     const d2 = ray.distanceSqToSegment(base, top, onRay)
     const along = onRay.distanceTo(ray.origin)
-    const radius = Math.max(ROTOR_R * 0.7, along * 0.012)
+    const radius = Math.max(rotorR * 0.7, along * 0.012)
     if (d2 < radius * radius && along < bestT) {
       bestT = along
       best = t.index

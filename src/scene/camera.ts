@@ -5,7 +5,7 @@ import { playEffect } from '../audio/engine'
 import { useStore } from '../state'
 import type { FarmArea } from './farmAreas'
 import { TURBINE } from './turbine/spec'
-import { TURBINE_SCALE, farmDynamics } from './turbine/dynamics'
+import { farmDynamics, lifeScale } from './turbine/dynamics'
 
 // Imperative camera API shared by the rig, pointer interaction and UI.
 
@@ -30,17 +30,19 @@ export function flyToTurbine(index: number) {
   playEffect('select')
   playEffect('fly')
   const yaw = farmDynamics.yaw[t.farm]
-  const hubY = TURBINE.hubHeight * TURBINE_SCALE
+  // Down there turbines are drawn life size; distances are in model metres scaled to the machine.
+  const s = lifeScale(t.farm)
+  const hubY = TURBINE.hubHeight * s
   const angle = yaw + Math.PI * 0.62
-  const r = 0.24
+  const r = 96 * s
   // Aim at the middle of the nacelle, a few metres behind the hub.
-  const back = -6 * TURBINE_SCALE
+  const back = -6 * s
   controlsInstance?.setLookAt(
     t.x + Math.sin(angle) * r,
-    hubY + 0.085,
+    hubY + 34 * s,
     t.z + Math.cos(angle) * r,
     t.x + Math.sin(yaw) * back,
-    hubY - 0.012,
+    hubY - 4.8 * s,
     t.z + Math.cos(yaw) * back,
     true,
   )
@@ -48,7 +50,7 @@ export function flyToTurbine(index: number) {
 
 /** Oblique view over a whole wind farm, from the south-east so the coast sits behind it. */
 export function flyToFarm({ center, radius }: FarmArea) {
-  const r = radius * 2.2 + 2
+  const r = radius * 1.6 + 1.5
   playEffect('fly')
   useStore.setState({ selected: null, hoveredFarm: null })
   controlsInstance?.setLookAt(center[0] + r * 0.55, r * 0.55, center[1] + r * 0.8, center[0], 0, center[1], true)

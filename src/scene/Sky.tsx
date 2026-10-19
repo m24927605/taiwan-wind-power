@@ -1,8 +1,16 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { OBSERVER } from '../geo/sun'
 import { ATMOSPHERE_GLSL, atmosphere } from './atmosphere'
 import { CLOUDS_GLSL, clouds } from './clouds'
+
+/** The lunar surface (scripts/build-moon.ts), equirectangular with longitude 0 at the centre. */
+const moonMap = new THREE.TextureLoader().load('textures/moon.webp')
+moonMap.colorSpace = THREE.SRGBColorSpace
+/** The north celestial pole in world space: the moon's north leans toward it. */
+const LAT = (OBSERVER.lat * Math.PI) / 180
+const CELESTIAL_NORTH = new THREE.Vector3(0, Math.sin(LAT), -Math.cos(LAT))
 
 /**
  * The sky dome, from the atmosphere's sky-view LUT. The environment variant feeds image-based
@@ -11,7 +19,7 @@ import { CLOUDS_GLSL, clouds } from './clouds'
  */
 const createMaterial = (environment: boolean) =>
   new THREE.ShaderMaterial({
-    uniforms: { ...atmosphere, ...clouds },
+    uniforms: { ...atmosphere, ...clouds, uMoonMap: { value: moonMap }, uCelestialNorth: { value: CELESTIAL_NORTH } },
     defines: environment ? { ENVIRONMENT: '' } : {},
     side: THREE.BackSide,
     depthWrite: false,
@@ -30,15 +38,34 @@ const createMaterial = (environment: boolean) =>
       varying vec3 vDir;
       const float DISC_RADIUS = 0.00465;
 
-      // Hashed stars on a grid of directions, about a pixel across.
-      float stars(vec3 d) {
-        vec3 p = d * 300.0;
-        vec3 cell = floor(p);
-        vec3 h = fract(sin(vec3(dot(cell, vec3(127.1, 311.7, 74.7)), dot(cell, vec3(269.5, 183.3, 246.1)), dot(cell, vec3(113.5, 271.9, 124.6)))) * 43758.5453);
-        if (h.x < 0.975) return 0.0;
-        float r = length(p - cell - 0.2 - h * 0.6);
-        float twinkle = 0.7 + 0.3 * sin(uTime * (1.0 + h.z * 3.0) + h.y * 40.0);
-        return smoothstep(0.35, 0.0, r) * (0.15 + pow(h.y, 8.0) * 4.0) * twinkle;
+      uniform sampler2D uMoonMap;
+      uniform vec3 uCelestialNorth;
+      /** Display brightness of sunlit highlands: the moon is the brightest thing in the night sky. */
+      const float MOON_DISPLAY = 3.6;
+      /** Mean albedo of the lunar highlands in moon.webp, so the map's grey reads as relative albedo. */
+      const float MOON_MAP_HIGHLANDS = 0.6;
+
+      // The moon as seen from Taiwan: the photographed lunar surface on its near side, north leaning
+      // toward the celestial pole, lit by the sun at the real phase (Lommel-Seeliger, so the limb
+      // does not darken). The unlit part is simply not seen: the sky shows through. A faint glow of
+      // scattered moonlight lies evenly over the disc and around it. In display units, like the stars
+      // (Stars.tsx): exposure stops adapting at night.
+      vec3 moonDisc(vec3 dir, float x, float r) {
+        vec3 tint = sunTransmittance(r, uSunDir.y) / max(sunTransmittance(r, 1.0), vec3(1e-4));
+        float phase = 0.5 - 0.5 * dot(uSunTrue, uSunDir);
+        vec3 glow = vec3(0.75, 0.82, 1.0) * 0.035 * phase * exp(-x * 0.08);
+        if (x >= 1.02) return glow * tint;
+        vec3 up = normalize(uCelestialNorth - uSunDir * dot(uCelestialNorth, uSunDir));
+        vec3 right = cross(uSunDir, up);
+        vec2 q = vec2(dot(dir, right), dot(dir, up)) / DISC_RADIUS;
+        float z = sqrt(max(1.0 - dot(q, q), 0.0));
+        vec3 n = right * q.x + up * q.y - uSunDir * z;
+        vec2 uv = vec2(0.5 + atan(q.x, z) / (2.0 * PI), 0.5 + asin(clamp(q.y, -1.0, 1.0)) / PI);
+        float albedo = texture2D(uMoonMap, uv).r / MOON_MAP_HIGHLANDS;
+        float mu0 = max(dot(n, uSunTrue), 0.0);
+        float lit = mu0 / (mu0 + z + 1e-3);
+        float edge = smoothstep(1.02, 0.98, x);
+        return (vec3(1.0, 0.99, 0.97) * MOON_DISPLAY * albedo * lit * edge + glow) * tint;
       }
 
       void main() {
@@ -52,21 +79,12 @@ const createMaterial = (environment: boolean) =>
         #else
         vec3 col = applyCirrus(skyRadiance(dir), dir, uCameraPos);
         float r = RG + max(uCameraPos.y, 0.001);
-        float darkness = smoothstep(-0.08, -0.25, uSunTrue.y);
-        if (darkness > 0.0) col += stars(dir) * darkness * 6e-3 * transmittanceTo(r, dir.y) * step(0.0, dir.y);
         float x = acos(clamp(dot(dir, uSunDir), -1.0, 1.0)) / DISC_RADIUS;
-        if (x < 1.2) {
+        if (uMoonLight > 0.5) {
+          col += moonDisc(dir, x, r) / uExposure;
+        } else if (x < 1.2) {
           float mu = sqrt(max(1.0 - x * x, 0.0));
           float shade = 1.0 - 0.6 * (1.0 - mu);
-          if (uMoonLight > 0.5) {
-            // The moon's near hemisphere, lit by the sun: its phase, with a little earthshine.
-            vec3 t1 = normalize(cross(uSunDir, vec3(0.0, 1.0, 0.0)));
-            vec3 t2 = cross(t1, uSunDir);
-            vec3 off = (dir - uSunDir * dot(dir, uSunDir)) / DISC_RADIUS;
-            vec3 n = t1 * dot(off, t1) + t2 * dot(off, t2) - uSunDir * mu;
-            float full = pow(0.5 - 0.5 * dot(uSunTrue, uSunDir), 1.5);
-            shade = (max(dot(n, uSunTrue), 0.0) + 0.01) / max(full, 0.02);
-          }
           col += uSunE * sunTransmittance(r, uSunDir.y) * 80.0 * shade * smoothstep(1.05, 0.95, x);
         }
         #endif

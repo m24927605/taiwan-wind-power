@@ -7,7 +7,7 @@ import { WORLD } from '../../geo/domain'
 import { useStore } from '../../state'
 import { ATMOSPHERE_GLSL, atmosphere } from '../atmosphere'
 import { CLOUDS_GLSL, clouds } from '../clouds'
-import { TURBINE_SCALE, farmDynamics } from '../turbine/dynamics'
+import { farmDynamics } from '../turbine/dynamics'
 import { CASCADES, WaveSimulation, type SeaState } from './WaveSimulation'
 
 /** Until the forecast arrives: a moderate north-east monsoon sea over a long swell. */
@@ -19,11 +19,8 @@ const DEFAULT_SEA: SeaState = {
 const HUB_TO_10M = 0.78
 /** Mean (Tm01) to peak period for a JONSWAP spectrum with γ = 3.3. */
 const MEAN_TO_PEAK_PERIOD = 1 / 0.83
-/**
- * Kilometres per metre of wave: the sea is drawn at the turbines' exaggeration, so a close-up
- * keeps the proportions of waves to jacket legs.
- */
-const WAVE_SCALE = TURBINE_SCALE
+/** Kilometres per metre of wave: life size, like the turbines around a camera near the sea. */
+const WAVE_SCALE = 0.001
 
 // Radial grid around the eye, rings spaced in proportion to their radius: about 10 m apart under
 // the camera, out to well past the domain.

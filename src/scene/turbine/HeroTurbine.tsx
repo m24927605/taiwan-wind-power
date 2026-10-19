@@ -7,7 +7,7 @@ import { useStore } from '../../state'
 import { PartCard } from '../../ui/PartCard'
 import { PARTS } from './parts'
 import { TURBINE } from './spec'
-import { TURBINE_SCALE, farmDynamics } from './dynamics'
+import { farmDynamics, turbineScale } from './dynamics'
 import { useTurbineModel } from './useTurbineModel'
 import { turbineMaterial } from './weathering'
 import { useT } from '../../i18n'
@@ -52,11 +52,13 @@ function Hero({ index }: { index: number }) {
     const g = group.current
     if (!g || !rotor.current) return
     g.rotation.y = farmDynamics.yaw[turbine.farm]
+    const scale = turbineScale(turbine.farm)
+    g.scale.setScalar(scale)
     rotor.current.rotation.z = -(farmDynamics.spin[turbine.farm] + turbine.phase)
     progress.current = Math.min(1, progress.current + dt / CUT_SECONDS)
     const ease = 1 - Math.pow(1 - progress.current, 3)
-    // Part labels only make sense while the nacelle fills a good part of the view.
-    const near = camera.position.distanceTo(g.position) < 1.6
+    // Part labels only make sense while the nacelle fills a good part of the view (within 640 m of model).
+    const near = camera.position.distanceTo(g.position) < 640 * scale
     const show = progress.current > 0.6 && near
     if (show !== labels) setLabels(show)
 
@@ -72,7 +74,7 @@ function Hero({ index }: { index: number }) {
   })
 
   return (
-    <group ref={group} position={[turbine.x, 0, turbine.z]} scale={TURBINE_SCALE}>
+    <group ref={group} position={[turbine.x, 0, turbine.z]} scale={turbineScale(turbine.farm)}>
       <mesh geometry={hero.tower} material={materials.paint} castShadow receiveShadow />
       <mesh geometry={hero.shell} material={materials.shell} castShadow receiveShadow />
       <mesh geometry={hero.internals} material={materials.paint} castShadow receiveShadow />

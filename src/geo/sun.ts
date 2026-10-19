@@ -1,6 +1,24 @@
-// Solar position (NOAA low-precision algorithm), accurate to well under a degree.
+// Solar position (NOAA low-precision algorithm), accurate to well under a degree, the moon's, and
+// the turning of the stars.
 
 const RAD = Math.PI / 180
+
+/** Where the sky is seen from: the middle of Taiwan. */
+export const OBSERVER = { lon: 120.9, lat: 23.7 } as const
+
+/**
+ * Row-major rotation from J2000 equatorial unit vectors (x to the March equinox, z to the north
+ * celestial pole) to world space (+x east, +y up, -z north) at a time and place: the rows are the
+ * observer's east, zenith and south in equatorial coordinates, turned by local sidereal time.
+ */
+export function equatorialToWorld(unixSeconds: number, lon: number, lat: number): number[] {
+  const days = unixSeconds / 86400 + 2440587.5 - 2451545.0
+  const gmst = (18.697374558 + 24.06570982441908 * days) % 24
+  const lst = (gmst * 15 + lon) * RAD
+  const phi = lat * RAD
+  const [cl, sl, cp, sp] = [Math.cos(lst), Math.sin(lst), Math.cos(phi), Math.sin(phi)]
+  return [-sl, cl, 0, cp * cl, cp * sl, sp, sp * cl, sp * sl, -cp]
+}
 
 /** Unit vector pointing at the sun in world space (+x east, -z north, +y up). */
 export function sunDirection(unixSeconds: number, lon: number, lat: number): [number, number, number] {

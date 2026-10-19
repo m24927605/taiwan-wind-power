@@ -2,13 +2,39 @@ import { WIND_FARMS } from '../../data/windfarms'
 import { windAt, type Weather } from '../../data/weather'
 import { TURBINE, powerAt, rpmAt } from './spec'
 
-/** Turbines are drawn 2.5x life size so the arrays stay legible from the overview. */
-const TURBINE_EXAGGERATION = 2.5
-
-/** Metres in the GLB to world units (km). */
-export const TURBINE_SCALE = 0.001 * TURBINE_EXAGGERATION
-
 const n = WIND_FARMS.length
+
+/** Kilometres (world units) per metre of the GLB. */
+const KM_PER_M = 0.001
+/**
+ * At sea level turbines are life size, so arrays keep their real spacing of six to eight rotor
+ * diameters. From the overview they would vanish, so they grow with the eye's altitude, up to this.
+ */
+const MAX_EXAGGERATION = 2.5
+const LIFE_SIZE_BELOW_KM = 1
+const FULL_SIZE_ABOVE_KM = 40
+/** Each farm's machine relative to the shared model, by rotor diameter. */
+const FARM_SIZE = WIND_FARMS.map((f) => f.rotorM / (2 * TURBINE.rotorRadius))
+
+/** How much larger than life turbines are drawn for the current camera; set once per frame. */
+export const turbineView = { exaggeration: 1 }
+
+/** Eases the exaggeration in over altitude (km) on a log scale, as the view widens. */
+export function updateTurbineView(altitudeKm: number) {
+  const t = Math.log(Math.max(altitudeKm, LIFE_SIZE_BELOW_KM) / LIFE_SIZE_BELOW_KM) / Math.log(FULL_SIZE_ABOVE_KM / LIFE_SIZE_BELOW_KM)
+  const k = Math.min(t, 1)
+  turbineView.exaggeration = 1 + (MAX_EXAGGERATION - 1) * k * k * (3 - 2 * k)
+}
+
+/** Life-size world units per model metre for a farm's turbines. */
+export function lifeScale(farm: number): number {
+  return KM_PER_M * FARM_SIZE[farm]
+}
+
+/** World units per model metre for a farm's turbines as drawn now. */
+export function turbineScale(farm: number): number {
+  return lifeScale(farm) * turbineView.exaggeration
+}
 
 // Per-farm live state, advanced once per frame and read by instancing shaders, the hero
 // turbine and the UI. Plain typed arrays so the render loop never allocates.

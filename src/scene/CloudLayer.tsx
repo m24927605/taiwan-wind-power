@@ -1,6 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
+import { SATELLITE_SIZE, loadSatellite, satelliteAt, type SatelliteFrame } from '../data/satellite'
 import { cloudsAt, windAt } from '../data/weather'
 import { WIND_FARMS } from '../data/windfarms'
 import { useStore } from '../state'
@@ -38,9 +39,41 @@ export function CloudLayer({ dpr }: { dpr: number }) {
     }
   }, [gl])
 
+  // Himawari frames over the past part of the forecast window, as textures once they arrive.
+  const weatherStart = useStore((s) => s.weather?.times[0])
+  const elevation = useStore((s) => s.elevation)
+  const textures = useMemo(() => new Map<SatelliteFrame, THREE.DataTexture>(), [])
+  useEffect(() => {
+    if (weatherStart !== undefined && elevation) loadSatellite(weatherStart, elevation)
+  }, [weatherStart, elevation])
+  useEffect(
+    () => () => {
+      for (const t of textures.values()) t.dispose()
+      textures.clear()
+    },
+    [textures],
+  )
+  const texture = (frame: SatelliteFrame) => {
+    let t = textures.get(frame)
+    if (!t) {
+      t = new THREE.DataTexture(frame.data, SATELLITE_SIZE, SATELLITE_SIZE)
+      t.magFilter = t.minFilter = THREE.LinearFilter
+      t.needsUpdate = true
+      textures.set(frame, t)
+    }
+    return t
+  }
+
   useFrame((_, dt) => {
     const { weather, time } = useStore.getState()
     if (!weather) return
+    const sat = satelliteAt(time)
+    clouds.uSatWeight.value = sat?.weight ?? 0
+    if (sat) {
+      clouds.uSatA.value = texture(sat.a)
+      clouds.uSatB.value = texture(sat.b)
+      clouds.uSatBlend.value = sat.blend
+    }
     // Cumulus from the forecast's low cloud, cirrus from its high cloud.
     const { low, high } = cloudsAt(weather, time)
     clouds.uCoverage.value = THREE.MathUtils.clamp(0.12 + low * 0.85, 0, 1)

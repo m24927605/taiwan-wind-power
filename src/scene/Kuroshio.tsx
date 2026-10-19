@@ -10,6 +10,9 @@ import { atmosphere } from './atmosphere'
 
 // Visual time compression: 1 m/s of real current moves a particle this many km per second.
 const SPEED_SCALE = 7
+/** Tracers are hidden below this camera altitude (km) and fully shown above TRACER_HIGH_KM. */
+const TRACER_LOW_KM = 2
+const TRACER_HIGH_KM = 12
 
 function currentTexture(): THREE.DataTexture {
   const { cols, rows } = CURRENT_GRID
@@ -114,6 +117,9 @@ function createMaterial(elevation: Elevation) {
         float life = smoothstep(0.0, 0.8, p.z) * (1.0 - smoothstep(p.w - 1.2, p.w, p.z));
         vec2 edge = min(p.xy, 1.0 - p.xy);
         vAlpha = life * smoothstep(0.08, 0.9, speed) * smoothstep(0.0, 0.07, min(edge.x, edge.y));
+        // A map device: it fades in as the eye climbs, and down among the turbines it would only
+        // read as streaks shooting across the water.
+        vAlpha *= smoothstep(${TRACER_LOW_KM.toFixed(1)}, ${TRACER_HIGH_KM.toFixed(1)}, uCameraPos.y);
         vSpeed = speed;
       }
     `,
@@ -216,8 +222,9 @@ export function Kuroshio({ elevation, weather, size }: { elevation: Elevation; w
     return () => disposeSimulation(next)
   }, [gl, size, elevation])
 
-  useFrame((_, rawDt) => {
+  useFrame(({ camera }, rawDt) => {
     if (!sim) return
+    sim.mesh.visible = camera.position.y > TRACER_LOW_KM
     const dt = Math.min(rawDt, 0.05)
     const f = hourIndex(weather, useStore.getState().time)
     const hour = Math.floor(f)

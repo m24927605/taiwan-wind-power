@@ -36,8 +36,11 @@ npm run build
 | Ocean currents | Open-Meteo Marine API | 14 × 14 grid over the domain, hourly, yesterday through three days ahead |
 | Sea state | Open-Meteo Marine API | Wind sea and swell (height, period, direction), each a median over the strait; the two peaks of the wave spectrum |
 | Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm, output, whitecaps and cloud drift |
-| Cloud cover | Open-Meteo Forecast API | Low and high cloud over the farms; cumulus and cirrus cover |
+| Clouds | Himawari-9 AHI via NASA GIBS | Hourly scans over the domain, about 30 minutes behind real time: band 13 infrared (brightness temperature, lapse-corrected over land) and, by day, band 3 visible place the cumulus, set its height and lay the cirrus |
+| Cloud cover | Open-Meteo Forecast API | Low and high cloud over the farms; shapes the clouds where no scan exists yet (the forecast hours) |
 | Sun, moon and sky | Solar and lunar positions | Day, dusk and moonlit night (at the real phase) follow the scene clock |
+| Stars | Yale Bright Star Catalogue (BSC5, CDS V/50) | Baked by `scripts/build-stars.ts`: the 5,080 stars down to magnitude 6, turned to local sidereal time over Taiwan |
+| Moon surface | Solar System Scope 2k moon (after NASA LRO) | Baked by `scripts/build-moon.ts` into a 1024 × 512 albedo map, draped on the moon's near side |
 
 The timeline scrubs across the full 96-hour window, and the play button runs it as a time-lapse.
 Turbine output comes from a cubic power curve (cut-in 3 m/s, rated 12 m/s, cut-out 25 m/s),
@@ -110,6 +113,13 @@ third frame the CPU re-buckets turbines by frustum (sphere test) and distance:
 
 In the overview, all 513 turbines collapse into a single `Points` draw.
 
+**Life size at sea, legible from orbit.** Below 1 km of altitude turbines are drawn life size, so
+the arrays keep their real spacing of six to eight rotor diameters; above that they grow on a log
+scale of altitude to 2.5× at 40 km, where life-size machines would vanish from the map. Each farm
+scales the shared model to its own machine's rotor, from 136 m (TPC Phase 1) to 222 m (Hai Long and
+Greater Changhua 2b & 4). Instancing, picking, aviation lights, the hero turbine, its shadow frustum
+and camera flights all read the same per-farm scale.
+
 **Asset pipeline.** The turbine is modelled procedurally after the medium-speed machines in the
 strait (V164/V174 family): four-legged jacket, yellow transition piece with a railed platform,
 boat landing and davit, a three-section tower with flanges, a long nacelle with a rooftop cooler
@@ -138,16 +148,17 @@ spaced in proportion to their radius, about 10 m apart under the eye and out pas
 at the mip matching its spacing. Another writes mipmapped (slope, slope², foam): mip filtering
 keeps the slope variance that distance averages away for the Beckmann glitter, and foam is
 injected where the surface folds and decays over seconds, so whitecaps leave trails. Breaking
-crests come from the combined Jacobian of all cascades. Waves are drawn at the turbines'
-exaggeration, so a close-up keeps the proportions of waves to jacket legs, and they lie down in
-the shallows so they never climb the coast.
+crests come from the combined Jacobian of all cascades. Waves are drawn life size, like the
+turbines around a camera near the sea, and they lie down in the shallows so they never climb the
+coast.
 
 **Kuroshio on the GPU.** Particle state (domain uv, age, lifetime) ping-pongs between RGBA32F
 render targets in `GPUComputationRenderer`. The current field is a 14 × 14 RG16F texture with
 hardware bilinear filtering and two hourly frames blended by a uniform. Land masking samples
 the shared elevation texture. Particles render as instanced streak quads. Their length follows
-current speed and camera distance, so they read as flow in the overview and as short wakes up
-close.
+current speed and camera distance, so they read as flow in the overview; they fade out as the
+camera descends below 12 km and are gone below 2 km, where among the turbines they would only read
+as streaks shooting across the water.
 
 **One elevation texture, many uses.** A single R16F texture provides ocean depth colouring,
 isobaths, surf, the calm shallows and the particle land mask.
@@ -170,11 +181,23 @@ integrating the same scattering along its view ray, so ridges fade into blue lay
 dissolves into haze and the overview looks down through 100 km of air. The three.js sun light
 takes its colour from the CPU-side transmittance, and an exposure metered off the mean sky
 radiance (partial adaptation, so dusk stays dusk) feeds ACES tone mapping. After nautical dusk
-the moon, at its real position and phase, becomes the key light of the whole pipeline, and
-stars fade in with atmospheric extinction.
+the moon, at its real position and phase, becomes the key light of the whole pipeline. The moon
+is the photographed lunar surface, its north leaning toward the celestial pole as seen from
+Taiwan, lit by the sun at the true phase with a Lommel-Seeliger law and a faint earthshine. The
+stars are the real ones: every Yale Bright Star Catalogue star down to magnitude 6, rotated by
+local sidereal time, sized by magnitude, coloured by B-V and dimmed toward the horizon by the same
+transmittance. A high moon washes out the faint ones. Night is not fully adapted to: the moon's
+illuminance is kept low enough that a moonlit sky stays darker than nautical twilight, and the
+moon and stars are set in display brightness.
 
-**Volumetric clouds.** Cumulus and cirrus follow the forecast's low and high cloud and drift with
-the wind. They are ray-marched through a flat layer at 0.9–2.9 km (Perlin-Worley shape eroded by
+**Volumetric clouds.** Where Himawari-9 has scanned, the clouds are where the satellite saw them:
+`data/satellite.ts` decodes the band 13 infrared back to brightness temperature with the layer's
+own colour map and calls cloud whatever is markedly colder than the clear sea (over land, the sea
+reduced by the lapse rate, with a wider margin for sun-warmed slopes); colder tops grow taller and
+the coldest become cirrus. By day the band 3 visible adds low cloud that reflects far more than sea
+or land. Consecutive hourly scans crossfade, so a time-lapse shows the real weather moving. For the
+forecast hours, and wherever GIBS cannot be reached, cumulus and cirrus follow the forecast's low and
+high cloud and drift with the wind. They are ray-marched through a flat layer at 0.9–2.9 km (Perlin-Worley shape eroded by
 Worley detail, generated on the GPU at load) with multi-octave scattering and powder darkening,
 as a post-processing pass that stops each ray at the depth buffer, so mountains pierce the layer.
 One pixel of each 2x2 block is marched per frame at reduced resolution and the rest is carried
@@ -187,7 +210,7 @@ the map stays readable.
 whenever the key light moves or the exposure shifts, so the gloss paint mirrors sky and sea. The
 selected turbine also casts soft sun shadows from a frustum that hugs it.
 
-**Soundscape.** Web Audio, off until the viewer turns it on (`audio/engine.ts`). Recorded beds of
+**Soundscape.** Web Audio, on by default from the viewer's first gesture (`audio/engine.ts`). Recorded beds of
 waves and sea wind fade and muffle as the camera climbs away from the water and swell with the
 live sea state; the wind itself is band-passed pink noise whose level, colour and gusts follow the
 hub-height wind; the nearest rotor is heard as noise amplitude-modulated at its blade-pass
@@ -279,4 +302,6 @@ rucisko, sea wind by Potapooo, gulls by steaq and Snapper4298, wind turbine by e
 
 Imagery: Sentinel-2 cloudless 2024 – https://s2maps.eu by EOX IT Services GmbH (contains modified
 Copernicus Sentinel data 2024), licensed CC BY-NC-SA 4.0. Elevation: AWS Terrain Tiles. Weather:
-Open-Meteo. Film narration: Gemini TTS.
+Open-Meteo. Clouds: Himawari-9 (JMA) imagery through NASA GIBS. Stars: Yale Bright Star Catalogue,
+5th revised edition (Hoffleit & Warren 1991), from CDS. Moon: Solar System Scope textures (CC BY
+4.0), based on NASA imagery. Film narration: Gemini TTS.

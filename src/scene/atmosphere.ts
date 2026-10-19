@@ -9,8 +9,11 @@ import * as THREE from 'three'
 export const SUN_E = 20
 /** Mie density over open water, relative to Hillaire's reference aerosol. */
 export const HAZE = 0.55
-/** Full moon to sun illuminance, raised from the physical 2.5e-6 to what night vision makes of it. */
-export const MOON_RATIO = 2.5e-3
+/**
+ * Full moon to sun illuminance, raised from the physical 2.5e-6 for night vision but kept low enough
+ * that a moonlit sky stays darker than the sky of nautical twilight.
+ */
+export const MOON_RATIO = 1e-5
 /** Below this solar elevation the moon is the key light of the whole scene. */
 export const NIGHT_ELEVATION = THREE.MathUtils.degToRad(-12)
 
