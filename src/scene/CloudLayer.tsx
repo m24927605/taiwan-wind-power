@@ -1,14 +1,16 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { SATELLITE_SIZE, loadSatellite, satelliteAt, type SatelliteFrame } from '../data/satellite'
-import { cloudsAt, windAt } from '../data/weather'
+import { SATELLITE_SIZE, initSatellite, satelliteAt, wantSatellite, type SatelliteFrame } from '../data/satellite'
+import { windAt } from '../data/weather'
 import { WIND_FARMS } from '../data/windfarms'
 import { useStore } from '../state'
 import { CloudPass } from './CloudPass'
 import { clouds, generateCloudNoise } from './clouds'
 
 const COARSE_POINTER = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
+/** Scans kept on the GPU: the pair in use and the pair either side of a scrub. */
+const MAX_TEXTURES = 4
 /** The farm whose forecast stands for the strait's wind aloft. */
 const REFERENCE_FARM = Math.floor(WIND_FARMS.length / 2)
 /** Clouds drift with the wind at their own height, a little faster than at the hubs. */
@@ -39,13 +41,12 @@ export function CloudLayer({ dpr }: { dpr: number }) {
     }
   }, [gl])
 
-  // Himawari frames over the past part of the forecast window, as textures once they arrive.
-  const weatherStart = useStore((s) => s.weather?.times[0])
+  // Himawari scans, loaded as scene time asks for them, as textures once they arrive.
   const elevation = useStore((s) => s.elevation)
   const textures = useMemo(() => new Map<SatelliteFrame, THREE.DataTexture>(), [])
   useEffect(() => {
-    if (weatherStart !== undefined && elevation) loadSatellite(weatherStart, elevation)
-  }, [weatherStart, elevation])
+    if (elevation) initSatellite(elevation)
+  }, [elevation])
   useEffect(
     () => () => {
       for (const t of textures.values()) t.dispose()
@@ -53,9 +54,16 @@ export function CloudLayer({ dpr }: { dpr: number }) {
     },
     [textures],
   )
-  const texture = (frame: SatelliteFrame) => {
+  const texture = (frame: SatelliteFrame, keep: SatelliteFrame) => {
     let t = textures.get(frame)
     if (!t) {
+      // Evict the oldest scan that is not part of the pair now in use.
+      for (const [f, old] of textures) {
+        if (textures.size < MAX_TEXTURES) break
+        if (f === keep) continue
+        old.dispose()
+        textures.delete(f)
+      }
       t = new THREE.DataTexture(frame.data, SATELLITE_SIZE, SATELLITE_SIZE)
       t.magFilter = t.minFilter = THREE.LinearFilter
       t.needsUpdate = true
@@ -67,20 +75,17 @@ export function CloudLayer({ dpr }: { dpr: number }) {
   useFrame((_, dt) => {
     const { weather, time } = useStore.getState()
     if (!weather) return
+    wantSatellite(time)
     const sat = satelliteAt(time)
-    clouds.uSatWeight.value = sat?.weight ?? 0
+    clouds.uSatWeight.value = sat ? 1 : 0
     if (sat) {
-      clouds.uSatA.value = texture(sat.a)
-      clouds.uSatB.value = texture(sat.b)
+      clouds.uSatA.value = texture(sat.a, sat.b)
+      clouds.uSatB.value = texture(sat.b, sat.a)
       clouds.uSatBlend.value = sat.blend
     }
-    // Cumulus from the forecast's low cloud, cirrus from its high cloud.
-    const { low, high } = cloudsAt(weather, time)
-    clouds.uCoverage.value = THREE.MathUtils.clamp(0.12 + low * 0.85, 0, 1)
-    clouds.uCirrus.value = high * 0.9
     const wind = windAt(weather, REFERENCE_FARM, time)
     const step = wind.speed * CLOUD_WIND_FACTOR * 0.001 * Math.min(dt, 0.1)
-    // Wind blows from fromRad; the field moves the other way (+x east, -z north).
+    // Wind blows from fromRad; the cloud detail moves the other way (+x east, -z north).
     clouds.uCloudOffset.value.x -= Math.sin(wind.fromRad) * step
     clouds.uCloudOffset.value.y += Math.cos(wind.fromRad) * step
   })

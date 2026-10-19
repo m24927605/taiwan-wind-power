@@ -2,7 +2,7 @@ import { DOMAIN } from '../geo/domain'
 import { WIND_FARMS } from './windfarms'
 
 // Live hourly ocean currents and sea state (Open-Meteo Marine) on a grid over the domain, and
-// hub-height wind and cloud cover (Open-Meteo Forecast) at every wind farm, from yesterday through
+// hub-height wind (Open-Meteo Forecast) at every wind farm, from yesterday through
 // three days ahead. Where Open-Meteo cannot be reached (a sandboxed host), a snapshot bundled at deploy
 // time by scripts/snapshot-weather.ts stands in, and says so.
 
@@ -18,8 +18,6 @@ export interface Weather {
    * direction-from degrees] of the wind sea, then the same for the swell.
    */
   sea: Float32Array
-  /** Per hour: low and high cloud cover over the farms, 0..1. */
-  clouds: Float32Array
   /** Per farm: [speed m/s, direction-from degrees] per hour, interleaved. */
   wind: Float32Array[]
   /** When the data was retrieved from Open-Meteo, unix seconds. */
@@ -89,7 +87,7 @@ export interface OpenMeteo {
   /** Retrieval time, unix milliseconds. */
   at: number
   marine: Hourly<MarineVariable>[]
-  wind: Hourly<'wind_speed_100m' | 'wind_direction_100m' | 'cloud_cover_low' | 'cloud_cover_high'>[]
+  wind: Hourly<'wind_speed_100m' | 'wind_direction_100m'>[]
 }
 
 export async function fetchOpenMeteo(range = LIVE_RANGE): Promise<OpenMeteo> {
@@ -103,7 +101,7 @@ export async function fetchOpenMeteo(range = LIVE_RANGE): Promise<OpenMeteo> {
     ),
     getJson<OpenMeteo['wind']>(
       `https://api.open-meteo.com/v1/forecast?latitude=${WIND_FARMS.map((f) => f.lat)}` +
-        `&longitude=${WIND_FARMS.map((f) => f.lon)}&hourly=wind_speed_100m,wind_direction_100m,cloud_cover_low,cloud_cover_high` +
+        `&longitude=${WIND_FARMS.map((f) => f.lon)}&hourly=wind_speed_100m,wind_direction_100m` +
         `&wind_speed_unit=ms&${range}`,
     ),
   ])
@@ -170,20 +168,7 @@ function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']
     return out
   })
 
-  const clouds = new Float32Array(times.length * 2)
-  times.forEach((t, h) => {
-    let low = 0
-    let high = 0
-    for (const farm of wind) {
-      const i = farm.hourly.time.indexOf(t)
-      low += (i < 0 ? 0 : (farm.hourly.cloud_cover_low[i] ?? 0)) / 100
-      high += (i < 0 ? 0 : (farm.hourly.cloud_cover_high[i] ?? 0)) / 100
-    }
-    clouds[h * 2] = low / wind.length
-    clouds[h * 2 + 1] = high / wind.length
-  })
-
-  return { times, currents, sea, clouds, wind: windByFarm, fetchedAt: at / 1000, source }
+  return { times, currents, sea, wind: windByFarm, fetchedAt: at / 1000, source }
 }
 
 /** Fractional hour index of a timestamp, clamped to the available range. */
@@ -238,14 +223,4 @@ export function seaAt(weather: Weather, t: number): { windSea: SeaComponent; swe
     return { hs: lerp(0), tm: lerp(1), fromRad: Math.atan2(x, y) }
   }
   return { windSea: component(0), swell: component(1) }
-}
-
-/** Interpolated low and high cloud cover over the farms, 0..1. */
-export function cloudsAt(weather: Weather, t: number): { low: number; high: number } {
-  const f = hourIndex(weather, t)
-  const i = Math.floor(f)
-  const j = Math.min(i + 1, weather.times.length - 1)
-  const k = f - i
-  const c = weather.clouds
-  return { low: c[i * 2] + (c[j * 2] - c[i * 2]) * k, high: c[i * 2 + 1] + (c[j * 2 + 1] - c[i * 2 + 1]) * k }
 }

@@ -16,6 +16,17 @@ export interface Bounds {
   north: number
 }
 
+/**
+ * Where the clouds come from Himawari-9 scans: everything the camera can see, from the widest
+ * zoom-out (about 117-131 E, 20-32 N) plus the 160 km a ray marches through the cloud layer.
+ */
+export const SATELLITE_BOUNDS = {
+  west: 113.5,
+  east: 131.5,
+  south: 16.5,
+  north: 33.0,
+} as const
+
 /** Main island, Green Island and Orchid Island: draped with sharper imagery than the rest. */
 export const DETAIL = {
   west: 119.95,

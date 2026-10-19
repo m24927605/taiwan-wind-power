@@ -1,24 +1,30 @@
-import { DOMAIN, lonLatToWorld } from '../geo/domain'
+import { DOMAIN, SATELLITE_BOUNDS, lonLatToWorld } from '../geo/domain'
 import { sunDirection } from '../geo/sun'
 import type { Elevation } from './elevation'
 
-// Live cloud from Himawari-9, served by NASA GIBS as PNGs every ten minutes, about half an hour
-// behind real time. The clean longwave infrared window (band 13, 10.4 µm) is decoded back to
+// The only clouds in the scene are the ones Himawari-9 saw. NASA GIBS serves its scans as PNGs
+// every ten minutes, about half an hour behind real time, over SATELLITE_BOUNDS: everything the
+// camera can see. The clean longwave infrared window (band 13, 10.4 µm) is decoded back to
 // brightness temperature with the layer's own colour map: cloud is what is colder than the clear
-// surface, its top is higher the colder it is, and the coldest is cirrus or anvil. Infrared misses
-// low cloud over sun-warmed land, so by day the red visible band (band 3) adds whatever reflects
-// far more than sea or land. Where GIBS cannot be reached, the clouds fall back to the forecast.
+// surface, its top is higher the colder it is, and the coldest is cirrus or anvil. By day the red
+// visible band (band 3) adds low cloud the infrared alone misses. Where there is no scan (hours
+// not observed yet, or GIBS out of reach) there are no clouds.
 
 const IR_LAYER = 'Himawari_AHI_Band13_Clean_Infrared'
 const VIS_LAYER = 'Himawari_AHI_Band3_Red_Visible_1km'
 const WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi'
 const COLORMAP = 'https://gibs.earthdata.nasa.gov/colormaps/v1.3/Clean_Longwave_Infrared_Window_Band.xml'
-/** About the band's 2 km footprint over the domain. */
-export const SATELLITE_SIZE = 256
+/** About the infrared band's 2 km footprint over SATELLITE_BOUNDS. */
+export const SATELLITE_SIZE = 896
 /** GIBS publishes a scan about half an hour after it is taken. */
 const LATENCY_S = 35 * 60
 const FRAME_S = 3600
-const CONCURRENCY = 4
+/**
+ * The newest scan stands until GIBS publishes the next one (an hour later, plus the latency and a
+ * margin); after that there is no observation.
+ */
+const HOLD_S = FRAME_S + LATENCY_S + 15 * 60
+const CONCURRENCY = 3
 /** Standard lapse rate, °C per metre: clear mountains are colder than the sea without any cloud. */
 const LAPSE = 0.0065
 /** Gaussian blur of the cloud fields, in pixels: the band's footprint shows as blocks otherwise. */
@@ -39,8 +45,8 @@ export interface SatelliteFrame {
   /** Scan time, unix seconds. */
   time: number
   /**
-   * RGBA8, SATELLITE_SIZE², row 0 at the north edge: R low cloud cover, G cloud-top height within
-   * the cumulus layer, B high cloud cover, A 255.
+   * RGBA8, SATELLITE_SIZE², row 0 at the north edge of SATELLITE_BOUNDS: R low cloud cover,
+   * G cloud-top height within the cumulus layer, B high cloud cover, A 255.
    */
   data: Uint8Array
 }
@@ -94,15 +100,20 @@ const smoothstep = (x: number, a: number, b: number) => {
   return t * t * (3 - 2 * t)
 }
 
-/** Ground height in metres (sea level over water) at the centre of every frame pixel. */
+/**
+ * Ground height in metres at the centre of every frame pixel: 0 over the sea, NaN beyond the
+ * elevation grid, where land and sea are not known.
+ */
 function pixelHeights(elevation: Elevation): Float32Array {
   const n = SATELLITE_SIZE
+  const b = SATELLITE_BOUNDS
   const heights = new Float32Array(n * n)
   for (let j = 0; j < n; j++) {
-    const lat = DOMAIN.north - ((j + 0.5) / n) * (DOMAIN.north - DOMAIN.south)
+    const lat = b.north - ((j + 0.5) / n) * (b.north - b.south)
     for (let i = 0; i < n; i++) {
-      const [x, z] = lonLatToWorld(DOMAIN.west + ((i + 0.5) / n) * (DOMAIN.east - DOMAIN.west), lat)
-      heights[j * n + i] = Math.max(elevation.heightAt(x, z), 0)
+      const lon = b.west + ((i + 0.5) / n) * (b.east - b.west)
+      const inside = lon >= DOMAIN.west && lon <= DOMAIN.east && lat >= DOMAIN.south && lat <= DOMAIN.north
+      heights[j * n + i] = inside ? Math.max(elevation.heightAt(...lonLatToWorld(lon, lat)), 0) : NaN
     }
   }
   return heights
@@ -138,15 +149,15 @@ function blur(field: Float32Array, n: number, sigma: number) {
 
 /** Cloud fields from one frame of brightness temperatures; null if the frame holds no data. */
 function cloudFields(temps: Float32Array, heights: Float32Array, reflectance: Float32Array | null): Uint8Array | null {
-  // Clear sky comes from the sea, whose temperature barely moves through the day; over land it
-  // is the same reduced by the lapse rate. Land surface temperature swings with sun and slope, so
-  // land takes a wider margin before it counts as cloud.
+  // Clear sky comes from the sea inside the map, whose temperature barely moves through the day;
+  // over land it is the same reduced by the lapse rate. Land surface temperature swings with sun
+  // and slope, and beyond the map land and sea are not known, so both take a wider margin.
   const sea: number[] = []
   let valid = 0
   temps.forEach((t, i) => {
     if (Number.isNaN(t)) return
     valid++
-    if (heights[i] <= 0) sea.push(t)
+    if (heights[i] === 0) sea.push(t)
   })
   if (valid < temps.length * 0.5) return null
   const clearSea = clearTemperature(sea)
@@ -156,10 +167,10 @@ function cloudFields(temps: Float32Array, heights: Float32Array, reflectance: Fl
   const top = new Float32Array(n * n)
   const high = new Float32Array(n * n)
   for (let i = 0; i < temps.length; i++) {
-    const land = heights[i] > 0
-    const clear = clearSea - heights[i] * LAPSE
+    const h = heights[i]
+    const clear = clearSea - (h > 0 ? h * LAPSE : 0)
     const t = Number.isNaN(temps[i]) ? clear : temps[i]
-    low[i] = land ? smoothstep(t, clear - 6, clear - 18) : smoothstep(t, clear - 3, clear - 13)
+    low[i] = h === 0 ? smoothstep(t, clear - 3, clear - 13) : smoothstep(t, clear - 6, clear - 18)
     if (reflectance) {
       const cold = smoothstep(t, clear - VIS_COLD_FROM, clear - VIS_COLD_TO)
       low[i] = Math.max(low[i], smoothstep(reflectance[i], VIS_CLEAR, VIS_CLOUD) * cold)
@@ -178,13 +189,13 @@ function cloudFields(temps: Float32Array, heights: Float32Array, reflectance: Fl
   return out
 }
 
-/** One layer of one scan over the domain as RGBA pixels, or null if GIBS has no image for it. */
+/** One layer of one scan over SATELLITE_BOUNDS as RGBA pixels, or null if GIBS has no image for it. */
 async function fetchLayer(layer: string, time: number): Promise<Uint8ClampedArray | null> {
+  const b = SATELLITE_BOUNDS
   const iso = new Date(time * 1000).toISOString().replace('.000', '')
   const url =
     `${WMS}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=${layer}&CRS=EPSG:4326&FORMAT=image/png` +
-    `&BBOX=${DOMAIN.south},${DOMAIN.west},${DOMAIN.north},${DOMAIN.east}` +
-    `&WIDTH=${SATELLITE_SIZE}&HEIGHT=${SATELLITE_SIZE}&TIME=${iso}`
+    `&BBOX=${b.south},${b.west},${b.north},${b.east}&WIDTH=${SATELLITE_SIZE}&HEIGHT=${SATELLITE_SIZE}&TIME=${iso}`
   const response = await fetch(url)
   if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) return null
   const bitmap = await createImageBitmap(await response.blob())
@@ -198,12 +209,11 @@ async function fetchLayer(layer: string, time: number): Promise<Uint8ClampedArra
 }
 
 async function loadFrame(time: number, heights: Float32Array): Promise<SatelliteFrame | null> {
-  const center = sunDirection(time, (DOMAIN.west + DOMAIN.east) / 2, (DOMAIN.south + DOMAIN.north) / 2)
-  const sunUp = center[1] > VIS_MIN_SUN
+  const centre = sunDirection(time, (DOMAIN.west + DOMAIN.east) / 2, (DOMAIN.south + DOMAIN.north) / 2)
   const [map, ir, vis] = await Promise.all([
     loadColormap(),
     fetchLayer(IR_LAYER, time),
-    sunUp ? fetchLayer(VIS_LAYER, time) : Promise.resolve(null),
+    centre[1] > VIS_MIN_SUN ? fetchLayer(VIS_LAYER, time) : Promise.resolve(null),
   ])
   if (!ir) return null
   const n = SATELLITE_SIZE * SATELLITE_SIZE
@@ -223,31 +233,66 @@ async function loadFrame(time: number, heights: Float32Array): Promise<Satellite
   return data && { time, data }
 }
 
+/** Scans by hour: a frame once loaded, null once a load has failed. */
 const frames = new Map<number, SatelliteFrame | null>()
-let latest = -Infinity
+const requested = new Map<number, Promise<void>>()
+const queue: { time: number; done: () => void }[] = []
+let heights: Float32Array | null = null
+let running = 0
 
-/**
- * Starts fetching every published hourly frame from `start` up to now, newest first so the live
- * view fills in before the history does.
- */
-export function loadSatellite(start: number, elevation: Elevation): void {
-  const heights = pixelHeights(elevation)
-  latest = Math.floor((Date.now() / 1000 - LATENCY_S) / FRAME_S) * FRAME_S
-  const queue: number[] = []
-  for (let t = latest; t >= Math.floor(start / FRAME_S) * FRAME_S; t -= FRAME_S) if (!frames.has(t)) queue.push(t)
-  const worker = async () => {
-    for (let t = queue.shift(); t !== undefined; t = queue.shift()) {
-      try {
-        // One retry: a dropped request should not leave a gap in the clouds.
-        frames.set(t, await loadFrame(t, heights).catch(() => loadFrame(t, heights)))
-      } catch (error) {
-        // Unreachable (a sandboxed host) or a bad frame: that hour falls back to the forecast.
-        frames.set(t, null)
-        if (t === latest) console.warn('[satellite] Himawari frames unavailable:', error)
-      }
-    }
+/** The newest scan GIBS has published by now. */
+const latestScan = () => Math.floor((Date.now() / 1000 - LATENCY_S) / FRAME_S) * FRAME_S
+
+/** Starts loading the scans asked for so far, once the ground (land and sea) is known. */
+export function initSatellite(elevation: Elevation): void {
+  heights ??= pixelHeights(elevation)
+  pump()
+}
+
+function pump() {
+  while (heights && running < CONCURRENCY && queue.length) {
+    const job = queue.shift() as (typeof queue)[number]
+    const h = heights
+    running++
+    loadFrame(job.time, h)
+      // One retry: a dropped request should not leave a gap in the clouds.
+      .catch(() => loadFrame(job.time, h))
+      .catch((error) => {
+        console.warn('[satellite] Himawari scan unavailable:', new Date(job.time * 1000).toISOString(), error)
+        return null
+      })
+      .then((frame) => frames.set(job.time, frame))
+      .finally(() => {
+        running--
+        job.done()
+        pump()
+      })
   }
-  for (let i = 0; i < CONCURRENCY; i++) void worker()
+}
+
+/** The scan for one hour, loaded once; nothing for hours GIBS has not published yet. */
+function request(time: number): Promise<void> {
+  if (time > latestScan()) return Promise.resolve()
+  let promise = requested.get(time)
+  if (!promise) {
+    promise = new Promise<void>((done) => queue.push({ time, done }))
+    requested.set(time, promise)
+    pump()
+  }
+  return promise
+}
+
+/** Asks for the scans scene time `t` needs: its hour and the next, then the one before. */
+export function wantSatellite(t: number): void {
+  const t0 = Math.floor(t / FRAME_S) * FRAME_S
+  for (const h of [t0, t0 + FRAME_S, t0 - FRAME_S]) void request(h)
+}
+
+/** Loads every scan from `from` to `to` (unix seconds), resolving once all have arrived. */
+export function prefetchSatellite(from: number, to: number): Promise<void> {
+  const jobs: Promise<void>[] = []
+  for (let t = Math.floor(from / FRAME_S) * FRAME_S; t <= to + FRAME_S; t += FRAME_S) jobs.push(request(t))
+  return Promise.all(jobs).then(() => undefined)
 }
 
 export interface SatelliteSample {
@@ -255,19 +300,15 @@ export interface SatelliteSample {
   b: SatelliteFrame
   /** Weight of b. */
   blend: number
-  /** How much the satellite, rather than the forecast, shapes the clouds: fades out after the last scan. */
-  weight: number
 }
 
-/** The two frames around scene time `t`, or null where there are none. */
+/** The scans around scene time `t`, or null where none was made (or loaded yet): no clouds then. */
 export function satelliteAt(t: number): SatelliteSample | null {
   const t0 = Math.floor(t / FRAME_S) * FRAME_S
-  // The newest scan at or before t; if that hour failed, the one before it, up to three hours back.
-  let a: SatelliteFrame | null = null
-  for (let k = 0; k < 3 && !a; k++) a = frames.get(Math.min(t0, latest) - k * FRAME_S) ?? null
+  // Before this hour's scan is published, the previous one stands for a while.
+  const previous = frames.get(t0 - FRAME_S) ?? null
+  const a = frames.get(t0) ?? (previous && t - previous.time <= HOLD_S ? previous : null)
   if (!a) return null
-  const b = a.time === t0 ? (frames.get(t0 + FRAME_S) ?? a) : a
-  // Past the newest scan the clouds hold it for an hour, then hand over to the forecast.
-  const weight = 1 - smoothstep(t, a.time + FRAME_S, a.time + 2 * FRAME_S)
-  return { a, b, blend: b === a ? 0 : (t - a.time) / FRAME_S, weight }
+  const b = frames.get(a.time + FRAME_S) ?? a
+  return { a, b, blend: b === a ? 0 : (t - a.time) / FRAME_S }
 }

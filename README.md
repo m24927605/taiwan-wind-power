@@ -41,8 +41,7 @@ Every push to `main` builds the app and publishes it to the `gh-pages` branch un
 | Ocean currents | Open-Meteo Marine API | 14 × 14 grid over the domain, hourly, yesterday through three days ahead |
 | Sea state | Open-Meteo Marine API | Wind sea and swell (height, period, direction), each a median over the strait; the two peaks of the wave spectrum |
 | Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm, output, whitecaps and cloud drift |
-| Clouds | Himawari-9 AHI via NASA GIBS | Hourly scans over the domain, about 30 minutes behind real time: band 13 infrared (brightness temperature, lapse-corrected over land) and, by day, band 3 visible place the cumulus, set its height and lay the cirrus |
-| Cloud cover | Open-Meteo Forecast API | Low and high cloud over the farms; shapes the clouds where no scan exists yet (the forecast hours) |
+| Clouds | Himawari-9 AHI via NASA GIBS | The only clouds: hourly scans over 113.5–131.5 E, 16.5–33 N (everything the camera can see), about 30 minutes behind real time, loaded as scene time needs them. Band 13 infrared (brightness temperature, lapse-corrected over land) and, by day, band 3 visible place the cumulus, set its height and lay the cirrus. Hours with no scan have no clouds |
 | Sun, moon and sky | Solar and lunar positions | Day, dusk and moonlit night (at the real phase) follow the scene clock |
 | Stars | Yale Bright Star Catalogue (BSC5, CDS V/50) | Baked by `scripts/build-stars.ts`: the 5,080 stars down to magnitude 6, turned to local sidereal time over Taiwan |
 | Moon surface | Solar System Scope 2k moon (after NASA LRO) | Baked by `scripts/build-moon.ts` into a 1024 × 512 albedo map, draped on the moon's near side |
@@ -195,14 +194,13 @@ transmittance. A high moon washes out the faint ones. Night is not fully adapted
 illuminance is kept low enough that a moonlit sky stays darker than nautical twilight, and the
 moon and stars are set in display brightness.
 
-**Volumetric clouds.** Where Himawari-9 has scanned, the clouds are where the satellite saw them:
+**Volumetric clouds.** The clouds are where Himawari-9 saw them:
 `data/satellite.ts` decodes the band 13 infrared back to brightness temperature with the layer's
 own colour map and calls cloud whatever is markedly colder than the clear sea (over land, the sea
 reduced by the lapse rate, with a wider margin for sun-warmed slopes); colder tops grow taller and
 the coldest become cirrus. By day the band 3 visible adds low cloud that reflects far more than sea
-or land. Consecutive hourly scans crossfade, so a time-lapse shows the real weather moving. For the
-forecast hours, and wherever GIBS cannot be reached, cumulus and cirrus follow the forecast's low and
-high cloud and drift with the wind. They are ray-marched through a flat layer at 0.9–2.9 km (Perlin-Worley shape eroded by
+or land. Consecutive hourly scans crossfade, so a time-lapse shows the real weather moving. There
+are no other clouds: the forecast hours, and anywhere GIBS cannot be reached, have a clear sky. They are ray-marched through a flat layer at 0.9–2.9 km (Perlin-Worley shape eroded by
 Worley detail, generated on the GPU at load) with multi-octave scattering and powder darkening,
 as a post-processing pass that stops each ray at the depth buffer, so mountains pierce the layer.
 One pixel of each 2x2 block is marched per frame at reduced resolution and the rest is carried
