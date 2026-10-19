@@ -45,12 +45,16 @@ export function CameraRig() {
     }
   })
 
-  // Keep depth precision across a 1000x zoom range by tying the near plane to altitude.
+  // Keep depth precision across a 1000x zoom range by tying the near plane to altitude. Close in it
+  // stays a twentieth of the height, clear of a turbine's sweeping blades; from altitude everything
+  // lies at least that far below, so it grows to four tenths. Land sits only 4 m above the sea, and
+  // from 600 km up a near plane of a few kilometres resolves depth no finer than that.
   useFrame(() => {
     const elevation = useStore.getState().elevation
     const ground = elevation ? Math.max(0, elevation.heightAt(camera.position.x, camera.position.z) / 1000) : 0
     const altitude = Math.max(camera.position.y - ground, 0.01)
-    const near = THREE.MathUtils.clamp(altitude * 0.05, 0.004, 5)
+    const share = THREE.MathUtils.lerp(0.05, 0.4, THREE.MathUtils.smoothstep(Math.log(altitude), Math.log(2), Math.log(50)))
+    const near = THREE.MathUtils.clamp(altitude * share, 0.004, 400)
     if (Math.abs(near - camera.near) / camera.near > 0.1) {
       camera.near = near
       camera.updateProjectionMatrix()
