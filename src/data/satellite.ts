@@ -23,11 +23,17 @@ const CONCURRENCY = 4
 const LAPSE = 0.0065
 /** Gaussian blur of the cloud fields, in pixels: the band's footprint shows as blocks otherwise. */
 const BLUR = 1.5
-/** Visible reflectance, corrected for the sun's height, from clear (sea ~0.03, land ~0.09) to cloud. */
-const VIS_CLEAR = 0.18
-const VIS_CLOUD = 0.38
-/** The visible band only counts once the sun is this high (sine of elevation). */
-const VIS_MIN_SUN = 0.2
+/** Visible reflectance from clear (sea ~0.03, land ~0.09, towns and sand to ~0.15) to cloud. */
+const VIS_CLEAR = 0.16
+const VIS_CLOUD = 0.36
+/** The visible band only counts once the sun is this high (sine of elevation, about 20 degrees). */
+const VIS_MIN_SUN = 0.35
+/**
+ * Bright in the visible but no colder than clear sky is sun-warmed land or glint, not cloud:
+ * visible cloud also has to read this much colder in the infrared, °C.
+ */
+const VIS_COLD_FROM = 0.5
+const VIS_COLD_TO = 2.5
 
 export interface SatelliteFrame {
   /** Scan time, unix seconds. */
@@ -154,7 +160,10 @@ function cloudFields(temps: Float32Array, heights: Float32Array, reflectance: Fl
     const clear = clearSea - heights[i] * LAPSE
     const t = Number.isNaN(temps[i]) ? clear : temps[i]
     low[i] = land ? smoothstep(t, clear - 6, clear - 18) : smoothstep(t, clear - 3, clear - 13)
-    if (reflectance) low[i] = Math.max(low[i], smoothstep(reflectance[i], VIS_CLEAR, VIS_CLOUD))
+    if (reflectance) {
+      const cold = smoothstep(t, clear - VIS_COLD_FROM, clear - VIS_COLD_TO)
+      low[i] = Math.max(low[i], smoothstep(reflectance[i], VIS_CLEAR, VIS_CLOUD) * cold)
+    }
     top[i] = smoothstep(t, clear - 3, clear - 30)
     high[i] = smoothstep(t, -15, -40)
   }
@@ -203,12 +212,12 @@ async function loadFrame(time: number, heights: Float32Array): Promise<Satellite
     const [r, g, b, alpha] = [ir[i * 4], ir[i * 4 + 1], ir[i * 4 + 2], ir[i * 4 + 3]]
     temps[i] = alpha < 128 ? NaN : r === g && g === b ? map.grey[r] : (map.colour.get((r << 16) | (g << 8) | b) ?? NaN)
   }
-  // The visible band is reflectance on a linear grey scale; dividing by the sun's height evens out
-  // morning and afternoon.
+  // The visible band is reflectance on a linear grey scale. A scan GIBS has not finished yet comes
+  // back transparent and counts as no visible data.
   let reflectance: Float32Array | null = null
   if (vis) {
     reflectance = new Float32Array(n)
-    for (let i = 0; i < n; i++) reflectance[i] = vis[i * 4 + 3] < 128 ? 0 : vis[i * 4] / 255 / center[1]
+    for (let i = 0; i < n; i++) reflectance[i] = vis[i * 4 + 3] < 128 ? 0 : vis[i * 4] / 255
   }
   const data = cloudFields(temps, heights, reflectance)
   return data && { time, data }
@@ -229,7 +238,8 @@ export function loadSatellite(start: number, elevation: Elevation): void {
   const worker = async () => {
     for (let t = queue.shift(); t !== undefined; t = queue.shift()) {
       try {
-        frames.set(t, await loadFrame(t, heights))
+        // One retry: a dropped request should not leave a gap in the clouds.
+        frames.set(t, await loadFrame(t, heights).catch(() => loadFrame(t, heights)))
       } catch (error) {
         // Unreachable (a sandboxed host) or a bad frame: that hour falls back to the forecast.
         frames.set(t, null)
@@ -252,10 +262,12 @@ export interface SatelliteSample {
 /** The two frames around scene time `t`, or null where there are none. */
 export function satelliteAt(t: number): SatelliteSample | null {
   const t0 = Math.floor(t / FRAME_S) * FRAME_S
-  const a = frames.get(Math.min(t0, latest)) ?? null
+  // The newest scan at or before t; if that hour failed, the one before it, up to three hours back.
+  let a: SatelliteFrame | null = null
+  for (let k = 0; k < 3 && !a; k++) a = frames.get(Math.min(t0, latest) - k * FRAME_S) ?? null
   if (!a) return null
-  const b = frames.get(t0 + FRAME_S) ?? a
+  const b = a.time === t0 ? (frames.get(t0 + FRAME_S) ?? a) : a
   // Past the newest scan the clouds hold it for an hour, then hand over to the forecast.
   const weight = 1 - smoothstep(t, a.time + FRAME_S, a.time + 2 * FRAME_S)
-  return { a, b, blend: b === a ? 0 : (t - t0) / FRAME_S, weight }
+  return { a, b, blend: b === a ? 0 : (t - a.time) / FRAME_S, weight }
 }
