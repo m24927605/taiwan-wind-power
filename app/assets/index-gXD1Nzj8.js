@@ -5986,8 +5986,9 @@ void main() {
 
         vec3 sun = sunIrradiance(0.0) * cloudShadow(vWorld);
         vec3 downwelling = skyIrradiance() + sun * max(uSunDir.y, 0.0);
-        // Light scattered back up out of the water column: a reflectance of a few per cent.
-        vec3 body = waterColor(depth) * downwelling * 0.135;
+        // Light scattered back up out of the water column: a reflectance of a few per cent of
+        // what falls on the facet, so the faces of the waves turned toward the sun read brighter.
+        vec3 body = waterColor(depth) * (skyIrradiance() + sun * max(dot(N, uSunDir), 0.0)) * 0.135;
         // Light through the thin, raised crests of waves seen against the sun.
         float crest = clamp(vHeight / max(uHs, 0.25) * 0.7 + 0.45, 0.0, 1.6);
         body += srgb(vec3(0.08, 0.42, 0.40)) * sun * crest * resolved.x
