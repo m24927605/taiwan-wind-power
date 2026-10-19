@@ -5134,6 +5134,14 @@ vec3 satelliteCloud(vec2 xz) {
   return mix(textureLod(uSatA, uv, 0.0).rgb, textureLod(uSatB, uv, 0.0).rgb, uSatBlend);
 }
 
+// How much the satellite shapes the clouds here: it hands back to the forecast at the edge of the
+// scanned domain, where clamped texels would otherwise smear into streaks.
+float satelliteWeight(vec2 xz) {
+  vec2 uv = (xz - uSatBounds.xy) * uSatBounds.zw;
+  vec2 inside = smoothstep(0.0, 0.03, uv) * smoothstep(1.0, 0.97, uv);
+  return uSatWeight * inside.x * inside.y;
+}
+
 // From the overview the map matters more than the weather: clouds thin out with the eye's altitude.
 float cloudFade() { return 1.0 - 0.65 * smoothstep(15.0, 120.0, uCameraPos.y); }
 
@@ -5157,12 +5165,13 @@ float cloudDensity(vec3 p, bool detail) {
   vec3 weather = textureLod(uCloudWeather, q / 52.0, 0.0).rgb;
   float coverage = clamp(uCoverage + (weather.r - 0.5) * 0.9, 0.0, 1.0);
   float top = mix(0.35, 1.0, weather.g);
-  if (uSatWeight > 0.0) {
+  float satW = uSatWeight > 0.0 ? satelliteWeight(p.xz) : 0.0;
+  if (satW > 0.0) {
     // Warp the lookup by a few kilometres so edges follow the noise rather than the 2 km pixels.
     vec3 sat = satelliteCloud(p.xz + (weather.gb - 0.5) * 6.0);
     // The noise varies the cover inside the satellite's cloud and adds none where it saw clear sky.
-    coverage = mix(coverage, clamp(sat.r * (0.5 + weather.r * 0.6), 0.0, 1.0), uSatWeight);
-    top = mix(top, mix(0.35, 1.0, sat.g), uSatWeight);
+    coverage = mix(coverage, clamp(sat.r * (0.5 + weather.r * 0.6), 0.0, 1.0), satW);
+    top = mix(top, mix(0.35, 1.0, sat.g), satW);
   }
   float profile = clamp(h01 / 0.07, 0.0, 1.0) * clamp(remap(h01, top * 0.45, top, 1.0, 0.0), 0.0, 1.0);
   vec4 s = textureLod(uCloudShape, vec3(q.x, p.y, q.y) / 4.8, 0.0);
@@ -5252,7 +5261,7 @@ vec3 applyCirrus(vec3 col, vec3 d, vec3 cam) {
   vec2 xz = cam.xz + d.xz * t;
   vec2 uv = (xz - uCloudOffset * 1.6) / 70.0;
   float n = textureLod(uCloudWeather, uv * vec2(1.0, 3.0), 0.0).b * 0.6 + textureLod(uCloudWeather, uv * vec2(3.0, 11.0) + 0.37, 0.0).b * 0.4;
-  float cirrus = uSatWeight > 0.0 ? mix(uCirrus, satelliteCloud(xz).b, uSatWeight) : uCirrus;
+  float cirrus = uSatWeight > 0.0 ? mix(uCirrus, satelliteCloud(xz).b, satelliteWeight(xz)) : uCirrus;
   float a = clamp((n - 1.0 + cirrus * 0.62) * 2.6, 0.0, 0.85) * smoothstep(0.004, 0.09, d.y);
   float c = dot(d, uSunDir);
   vec3 light = sunIrradiance(8.5) * (0.6 * hg(0.75, c) + 0.4 * hg(-0.1, c)) * 0.5 + skyIrradiance() / PI * 0.9;
