@@ -124,13 +124,19 @@ function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']
   const times = marine[0].hourly.time
   const currents = times.map((_, h) => {
     const frame = new Float32Array(marine.length * 2)
+    const known = new Uint8Array(marine.length)
     marine.forEach((point, i) => {
       // Velocity is km/h; direction is the bearing the current flows toward.
-      const speed = (point.hourly.ocean_current_velocity[h] ?? 0) / 3.6
-      const dir = ((point.hourly.ocean_current_direction[h] ?? 0) * Math.PI) / 180
+      const velocity = point.hourly.ocean_current_velocity[h]
+      const direction = point.hourly.ocean_current_direction[h]
+      if (velocity === null || direction === null) return
+      const speed = velocity / 3.6
+      const dir = (direction * Math.PI) / 180
       frame[i * 2] = speed * Math.sin(dir)
       frame[i * 2 + 1] = speed * Math.cos(dir)
+      known[i] = 1
     })
+    fillUnknown(frame, known)
     return frame
   })
 
@@ -170,6 +176,43 @@ function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']
   })
 
   return { times, currents, sea, wind: windByFarm, fetchedAt: at / 1000, source }
+}
+
+/**
+ * Grid points the marine model leaves empty (on land and against the coast) take the mean of
+ * their known neighbours, ring by ring, so sampling between grid points never blends real
+ * currents toward a still sea that is only missing data. Land itself is masked by elevation.
+ */
+function fillUnknown(frame: Float32Array, known: Uint8Array) {
+  const { cols, rows } = CURRENT_GRID
+  for (let ring = known.slice(); ring.includes(0); ) {
+    const next = ring.slice()
+    for (let i = 0; i < ring.length; i++) {
+      if (ring[i]) continue
+      const r = Math.floor(i / cols)
+      const c = i % cols
+      let x = 0
+      let y = 0
+      let n = 0
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const rr = r + dr
+          const cc = c + dc
+          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols || !ring[rr * cols + cc]) continue
+          x += frame[(rr * cols + cc) * 2]
+          y += frame[(rr * cols + cc) * 2 + 1]
+          n++
+        }
+      }
+      if (n === 0) continue
+      frame[i * 2] = x / n
+      frame[i * 2 + 1] = y / n
+      next[i] = 1
+    }
+    // A frame with no known point at all stays still.
+    if (next.every((v, i) => v === ring[i])) break
+    ring = next
+  }
 }
 
 /** Fractional hour index of a timestamp, clamped to the available range. */
