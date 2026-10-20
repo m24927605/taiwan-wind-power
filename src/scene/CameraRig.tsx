@@ -74,7 +74,6 @@ export function CameraRig() {
       makeDefault
       minDistance={0.06}
       maxDistance={650}
-      maxPolarAngle={Math.PI * 0.47}
       dollyToCursor
       smoothTime={0.35}
       draggingSmoothTime={0.12}

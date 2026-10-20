@@ -24,9 +24,12 @@ const scratchHit = new THREE.Vector3()
 const insideDomain = (x: number, z: number, margin = 0) =>
   x >= WORLD.minX + margin && x <= WORLD.maxX - margin && z >= WORLD.minZ + margin && z <= WORLD.maxZ - margin
 
-/** Whether all the ground this camera shows lies inside the domain. */
+/** Whether the camera clears the surface and all visible ground lies inside the domain. */
 export function viewInsideDomain(camera: THREE.PerspectiveCamera): boolean {
   const p = camera.position
+  const elevation = useStore.getState().elevation
+  const ground = Math.max(0, elevation?.heightAt(p.x, p.z) ?? 0) / 1000
+  if (p.y < ground + 0.01) return false // Keep 10 m above the sea and raised terrain.
   if (p.y < LOW_ALTITUDE) return insideDomain(p.x, p.z, LOW_MARGIN)
   camera.updateMatrixWorld()
   for (const s of SCREEN_SAMPLES) {
