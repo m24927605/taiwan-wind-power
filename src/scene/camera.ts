@@ -147,10 +147,9 @@ export function flyToTurbine(index: number) {
   // Down there turbines are drawn life size; distances are in model metres scaled to the machine.
   const s = lifeScale(t.farm)
   const hubY = TURBINE.hubHeight * s
-  // Of the two three-quarter views of the nacelle, the one facing the key light, so the water
-  // behind the machine carries the sun's (or moon's) glitter instead of lying flat and dark.
+  // Face the sun or moon so the cutaway machinery remains readable.
   const light = atmosphere.uSunDir.value
-  const toward = (a: number) => -(Math.sin(a) * light.x + Math.cos(a) * light.z)
+  const toward = (a: number) => Math.sin(a) * light.x + Math.cos(a) * light.z
   const angle = toward(yaw + Math.PI * 0.62) >= toward(yaw - Math.PI * 0.62) ? yaw + Math.PI * 0.62 : yaw - Math.PI * 0.62
   const r = 104 * s
   // Aim at the middle of the nacelle, a few metres behind the hub, from a little above hub height,
