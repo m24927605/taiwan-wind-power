@@ -5,8 +5,9 @@
 // fetch leaves the last good copy in place. The app falls back to Open-Meteo directly, then to its
 // bundled snapshot, only when this is out of reach.
 //
-// A Worker gets a few milliseconds of CPU per run, and parsing the 1.7 MB of Open-Meteo JSON alone
-// can use them up, so the model is stored and served as the text Open-Meteo sent, never parsed.
+// A Worker gets a few milliseconds of CPU per run, and even decoding the 1.7 MB of Open-Meteo JSON
+// to a string uses them up, so the model is stored and served as the bytes Open-Meteo sent: joined,
+// never decoded or parsed.
 
 import { fetchBuoyStations, fetchBuoys, type BuoyStation } from '../src/data/cwa'
 import { openMeteoUrls } from '../src/data/openMeteo'
@@ -18,7 +19,8 @@ interface Env {
 
 /** Must match the hourly cron in wrangler.jsonc; the other one refreshes the buoys. */
 const HOURLY_CRON = '5 * * * *'
-const MODEL_KEY = 'model'
+/** The model's JSON object without its closing brace, so the buoys can follow as one more field. */
+const MODEL_KEY = 'model-head'
 const STATIONS_KEY = 'stations'
 const BUOYS_KEY = 'buoys'
 /** Browsers may reuse a response this long, s; the app refreshes every ten minutes. */
@@ -26,20 +28,20 @@ const BROWSER_TTL_S = 60
 
 const CORS = { 'access-control-allow-origin': '*' }
 
-async function fetchText(url: string): Promise<string> {
+async function fetchBytes(url: string): Promise<ArrayBuffer> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`)
-  return res.text()
+  return res.arrayBuffer()
 }
 
 /** The OpenMeteo shape (src/data/openMeteo.ts), assembled from the responses as sent. */
-async function refreshModel(env: Env): Promise<string> {
+async function refreshModel(env: Env): Promise<ArrayBuffer> {
   const at = Date.now()
   const urls = openMeteoUrls()
-  const [marine, wind] = await Promise.all([fetchText(urls.marine), fetchText(urls.wind)])
-  const model = `{"at":${at},"marine":${marine},"wind":${wind}}`
-  await env.WEATHER.put(MODEL_KEY, model)
-  return model
+  const [marine, wind] = await Promise.all([fetchBytes(urls.marine), fetchBytes(urls.wind)])
+  const head = await new Blob([`{"at":${at},"marine":`, marine, ',"wind":', wind]).arrayBuffer()
+  await env.WEATHER.put(MODEL_KEY, head)
+  return head
 }
 
 async function refreshStations(env: Env): Promise<BuoyStation[]> {
@@ -69,7 +71,7 @@ export default {
     const url = new URL(request.url)
     if (request.method !== 'GET' || url.pathname !== '/weather') return new Response('Not found', { status: 404, headers: CORS })
 
-    let [model, buoys] = await Promise.all([env.WEATHER.get(MODEL_KEY), env.WEATHER.get(BUOYS_KEY)])
+    let [model, buoys] = await Promise.all([env.WEATHER.get(MODEL_KEY, 'arrayBuffer'), env.WEATHER.get(BUOYS_KEY)])
     // Until the schedule has filled the store (a new namespace), fetch here once.
     if (model === null) {
       try {
@@ -79,8 +81,7 @@ export default {
       }
     }
     if (buoys === null) buoys = await refreshBuoys(env).catch(() => null)
-    // The buoys join the stored model as one more field.
-    const body = buoys === null ? model : `${model.slice(0, -1)},"buoys":${buoys}}`
+    const body = new Blob(buoys === null ? [model, '}'] : [model, ',"buoys":', buoys, '}'])
     return new Response(body, {
       headers: { ...CORS, 'content-type': 'application/json', 'cache-control': `public, max-age=${BROWSER_TTL_S}` },
     })
