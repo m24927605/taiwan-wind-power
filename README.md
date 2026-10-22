@@ -113,7 +113,7 @@ src/
     turbine/          GLB access, per-farm dynamics, instanced LOD, cutaway hero
   ui/               HUD, timeline, toolbar, turbine panel, engineering overlay
   state.ts          zustand store: stage, data, scene time, tools, stats
-worker/             weather service (Cloudflare Worker): Open-Meteo hourly and CWA buoys every 10 minutes, stored in KV
+worker/             weather service (Cloudflare Worker): Open-Meteo hourly and CWA buoys every 10 minutes, stored in KV as sent
 ```
 
 Per-frame simulation state, such as rotor angle, yaw and wind per farm, lives in plain typed

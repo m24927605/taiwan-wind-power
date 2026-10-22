@@ -49,20 +49,24 @@ export interface OpenMeteo {
   wind: Hourly<'wind_speed_100m' | 'wind_direction_100m'>[]
 }
 
-export async function fetchOpenMeteo(range = LIVE_RANGE): Promise<OpenMeteo> {
+/** The two requests behind the weather: the marine grid and the farms' hub-height wind. */
+export function openMeteoUrls(range = LIVE_RANGE): { marine: string; wind: string } {
   const { lats, lons } = gridCoordinates()
-  const [marine, wind] = await Promise.all([
-    getJson<OpenMeteo['marine']>(
+  return {
+    marine:
       `https://marine-api.open-meteo.com/v1/marine?latitude=${lats}&longitude=${lons}` +
-        `&hourly=ocean_current_velocity,ocean_current_direction,` +
-        SEA_COMPONENTS.map((c) => `${c}_height,${c}_period,${c}_direction`).join(',') +
-        `&${range}`,
-    ),
-    getJson<OpenMeteo['wind']>(
+      `&hourly=ocean_current_velocity,ocean_current_direction,` +
+      SEA_COMPONENTS.map((c) => `${c}_height,${c}_period,${c}_direction`).join(',') +
+      `&${range}`,
+    wind:
       `https://api.open-meteo.com/v1/forecast?latitude=${WIND_FARMS.map((f) => f.lat)}` +
-        `&longitude=${WIND_FARMS.map((f) => f.lon)}&hourly=wind_speed_100m,wind_direction_100m` +
-        `&wind_speed_unit=ms&${range}`,
-    ),
-  ])
+      `&longitude=${WIND_FARMS.map((f) => f.lon)}&hourly=wind_speed_100m,wind_direction_100m` +
+      `&wind_speed_unit=ms&${range}`,
+  }
+}
+
+export async function fetchOpenMeteo(range = LIVE_RANGE): Promise<OpenMeteo> {
+  const urls = openMeteoUrls(range)
+  const [marine, wind] = await Promise.all([getJson<OpenMeteo['marine']>(urls.marine), getJson<OpenMeteo['wind']>(urls.wind)])
   return { at: Date.now(), marine, wind }
 }
