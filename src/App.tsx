@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { loadElevation } from './data/elevation'
-import { fetchWeather } from './data/weather'
+import { fetchWeather, type Weather } from './data/weather'
 import { Scene } from './scene/Scene'
 import { useStore } from './state'
 import { EngineeringPanel } from './ui/EngineeringPanel'
@@ -24,7 +24,8 @@ export default function App() {
       if (document.hidden) return
       fetchWeather().then((weather) => {
         const shown = useStore.getState().weather
-        const newer = !shown || weather.fetchedAt > shown.fetchedAt || (weather.fetchedAt === shown.fetchedAt && weather.observedAt > shown.observedAt)
+        const observedAt = (w: Weather) => w.observed.waves?.at ?? 0
+        const newer = !shown || weather.fetchedAt > shown.fetchedAt || (weather.fetchedAt === shown.fetchedAt && observedAt(weather) > observedAt(shown))
         if (newer) useStore.setState({ weather })
       }, () => {})
     }, WEATHER_REFRESH_MS)

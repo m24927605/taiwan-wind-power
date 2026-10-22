@@ -207,6 +207,34 @@ small {
   margin-top: 2px;
 }
 
+.metrics__sources {
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.metrics__sources {
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+}
+
+.metrics__sources li {
+  display: contents;
+}
+
+.metrics__sources span {
+  color: var(--text-dim);
+}
+
+.metrics__sources .is-stale {
+  color: var(--signal);
+}
+
 /* ---------------------------------------------------------------- timeline */
 
 .timeline {

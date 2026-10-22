@@ -1,5 +1,5 @@
 import { WIND_FARMS } from '../data/windfarms'
-import { hourIndex } from '../data/weather'
+import { hourIndex, type Weather } from '../data/weather'
 import { farmDynamics, totalOutputMW } from '../scene/turbine/dynamics'
 import { useT } from '../i18n'
 import { useStore } from '../state'
@@ -88,12 +88,38 @@ export function Metrics() {
             {peakCurrent().toFixed(2)}
             <small>m/s</small>
           </dd>
-          <dd className="metrics__note">
-            Open-Meteo · {weather.source === 'snapshot' && `${formatDay(weather.fetchedAt, t.lang)} `}
-            {formatTime(weather.fetchedAt, t.lang)} {weather.source === 'snapshot' ? t.snapshotTag : t.updated}
-          </dd>
         </div>
       </dl>
+      <Sources weather={weather} />
     </aside>
+  )
+}
+
+/** The model refreshes hourly; older than this, its update has failed. */
+const MODEL_STALE_S = 2 * 3600
+/** Buoys report hourly and reach CWA within the hour; older than this, they have stopped coming. */
+const OBSERVED_STALE_S = 3 * 3600
+
+/** Where the numbers come from and how fresh they are, flagged when an update has stopped. */
+function Sources({ weather }: { weather: Weather }) {
+  const t = useT()
+  const now = Date.now() / 1000
+  const when = (at: number) => (now - at > 20 * 3600 ? `${formatDay(at, t.lang)} ${formatTime(at, t.lang)}` : formatTime(at, t.lang))
+  const age = (at: number) => t.staleFor(Math.floor((now - at) / 3600))
+  const snapshot = weather.source === 'snapshot'
+  const modelStale = !snapshot && now - weather.fetchedAt > MODEL_STALE_S
+  const { waves } = weather.observed
+  const wavesStale = waves !== null && now - waves.at > OBSERVED_STALE_S
+  return (
+    <ul className="metrics__sources">
+      <li className={modelStale ? 'is-stale' : ''}>
+        <span>{t.sourceModel}</span>
+        Open-Meteo · {when(weather.fetchedAt)} {snapshot ? t.snapshotTag : modelStale ? age(weather.fetchedAt) : t.updated}
+      </li>
+      <li className={waves === null || wavesStale ? 'is-stale' : ''}>
+        <span>{t.sourceWaves}</span>
+        {waves === null ? t.notMeasured : `${t.stations(waves.stations)} · ${when(waves.at)}${wavesStale ? ` ${age(waves.at)}` : ''}`}
+      </li>
+    </ul>
   )
 }

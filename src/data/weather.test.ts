@@ -54,7 +54,7 @@ describe('buoy correction', () => {
 
   it('keeps the periods and records when it was observed', () => {
     expect(seaAt(weather, 10 * HOUR, bx, bz).swell.tm).toBeCloseTo(9)
-    expect(weather.observedAt).toBe(10 * HOUR)
+    expect(weather.observed.waves).toEqual({ stations: 1, at: 10 * HOUR })
   })
 
   it('fills the points left out of the request from their neighbours', () => {
@@ -69,6 +69,6 @@ describe('buoy correction', () => {
     const { windSea, swell } = seaAt(plain, 10 * HOUR, bx, bz)
     expect(windSea.hs).toBeCloseTo(2)
     expect(swell.hs).toBeCloseTo(1)
-    expect(plain.observedAt).toBe(0)
+    expect(plain.observed.waves).toBeNull()
   })
 })

@@ -27,6 +27,11 @@ const zh = {
   peakCurrent: '黑潮最大流速',
   updated: '更新',
   snapshotTag: '快照',
+  sourceModel: '模式預報',
+  sourceWaves: '實測浪高',
+  stations: (n: number) => `氣象署 ${n} 站`,
+  notMeasured: '未取得 · 使用模式值',
+  staleFor: (hours: number) => `· 已 ${hours} 小時未更新`,
 
   timeline: '時間軸',
   pause: '暫停',
@@ -130,6 +135,11 @@ const en: Messages = {
   peakCurrent: 'Kuroshio peak current',
   updated: 'updated',
   snapshotTag: 'snapshot',
+  sourceModel: 'Forecast',
+  sourceWaves: 'Measured waves',
+  stations: (n: number) => `CWA, ${n} stations`,
+  notMeasured: 'unavailable · model values',
+  staleFor: (hours: number) => `· ${hours} h old`,
 
   timeline: 'Timeline',
   pause: 'Pause',

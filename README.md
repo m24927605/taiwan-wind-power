@@ -37,7 +37,9 @@ Open-Meteo every hour and the CWA buoys every ten minutes into KV, and every vis
 that stored copy, so upstream calls stay fixed whatever the traffic and a failed fetch leaves the
 last good copy in place; the CWA key lives only there. The app refreshes every ten minutes while
 open. It reads the Worker's origin from `VITE_WEATHER_SERVICE` (`.env.production`); without it, or
-when it is out of reach, the app fetches Open-Meteo itself and shows the model uncorrected.
+when it is out of reach, the app fetches Open-Meteo itself and shows the model uncorrected. The metrics
+panel lists each source with the time of its newest data, in red once an update is overdue (the
+model after two hours, measurements after three) or when no measurements came.
 
 ```bash
 npx wrangler secret put CWA_API_KEY --config worker/wrangler.jsonc   # once; a CWA open data key

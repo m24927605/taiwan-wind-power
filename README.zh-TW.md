@@ -34,6 +34,8 @@ npm test               # 單元測試（Vitest）；CI 每次部署前都會執�
 浮標資料並存進 KV，所有訪客讀的都是這份存好的資料，所以對外請求次數固定、與流量無關，抓取失敗時也會保留上一份
 好資料；氣象署授權碼只存在那裡。頁面開著時，應用程式每 10 分鐘重新讀取一次。應用程式從 `VITE_WEATHER_SERVICE`
 （`.env.production`）讀取 Worker 的網址；未設定或連不上時，應用程式會自己抓取 Open-Meteo，並顯示未經校正的模式值。
+數據面板底部列出每個資料來源與最新一筆資料的時間；更新逾時（模式超過 2 小時、實測超過 3 小時）或沒有取得實測值時，
+會以紅字標示。
 
 ```bash
 npx wrangler secret put CWA_API_KEY --config worker/wrangler.jsonc   # 只需一次；氣象署開放資料授權碼

@@ -22,10 +22,17 @@ export interface Weather {
   wind: Float32Array[]
   /** When the data was retrieved from Open-Meteo, unix seconds. */
   fetchedAt: number
-  /** The latest buoy measurement the sea state was corrected with, unix seconds; 0 when uncorrected. */
-  observedAt: number
+  /** The measurements the model was corrected with, by kind; null where none came. */
+  observed: { waves: Observed | null }
   /** Fetched just now, or read from the bundled snapshot. */
   source: 'live' | 'snapshot'
+}
+
+export interface Observed {
+  /** Stations that reported. */
+  stations: number
+  /** The newest measurement, unix seconds. */
+  at: number
 }
 
 const SNAPSHOT_URL = 'data/weather-snapshot.json'
@@ -119,7 +126,7 @@ export function parseWeather({ at, marine, wind, buoys }: WeatherPayload, source
     return frame
   })
   if (buoys?.length) correctSea(sea, times, buoys)
-  const observedAt = Math.max(0, ...(buoys ?? []).map((b) => b.waves[b.waves.length - 1][0]))
+  const waves = buoys?.length ? { stations: buoys.length, at: Math.max(...buoys.map((b) => b.waves[b.waves.length - 1][0])) } : null
 
   const windByFarm = wind.map((farm) => {
     const byTime = new Map(farm.hourly.time.map((t, i) => [t, i]))
@@ -132,7 +139,7 @@ export function parseWeather({ at, marine, wind, buoys }: WeatherPayload, source
     return out
   })
 
-  return { times, currents, sea, wind: windByFarm, fetchedAt: at / 1000, observedAt, source }
+  return { times, currents, sea, wind: windByFarm, fetchedAt: at / 1000, observed: { waves }, source }
 }
 
 /**
