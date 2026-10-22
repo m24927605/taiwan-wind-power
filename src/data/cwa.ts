@@ -92,9 +92,14 @@ export async function fetchStations(key: string): Promise<Stations> {
   return stations
 }
 
-/** Each station's hourly records of the given elements, keyed by station id. */
-async function fetchObservations(key: string, stations: Station[], elements: string) {
-  const query = `&WeatherElement=${elements}&StationID=${stations.map((s) => s.id)}`
+/**
+ * Each station's hourly records of the given elements over the last `hours`, keyed by station id.
+ * The dataset holds 48 hours; asking for fewer keeps the response, and the Worker's CPU, down.
+ */
+async function fetchObservations(key: string, stations: Station[], elements: string, hours = 48) {
+  // Taiwan time, without an offset, as the dataset writes it.
+  const from = new Date(Date.now() + (8 - hours) * 3600 * 1000).toISOString().slice(0, 19)
+  const query = `&WeatherElement=${elements}&StationID=${stations.map((s) => s.id)}&timeFrom=${from}`
   const observations = await getCwa<Observations>(OBSERVATIONS, key, query)
   return new Map(
     observations.Records.SeaSurfaceObs.Location.map((l) => [
@@ -115,9 +120,13 @@ function series(records: { t: number; e: Elements }[], read: (e: Elements) => st
   return out.sort((a, b) => a[0] - b[0])
 }
 
-/** The buoys' wave heights and wind; a buoy with neither in the last 48 hours is left out. */
+/**
+ * The buoys' wave heights and wind over the last day, as far back as the model reaches; a buoy with
+ * neither is left out. The anemometer comes with gusts and Beaufort numbers, three times the
+ * bytes of the wave heights, so two days would not fit the Worker's CPU budget.
+ */
 export async function fetchBuoys(key: string, stations: Station[]): Promise<Buoy[]> {
-  const records = await fetchObservations(key, stations, 'WaveHeight,PrimaryAnemometer')
+  const records = await fetchObservations(key, stations, 'WaveHeight,PrimaryAnemometer', 24)
   return stations.flatMap((station) => {
     const r = records.get(station.id) ?? []
     const buoy = { ...station, waves: series(r, (e) => e.WaveHeight), wind: series(r, (e) => e.PrimaryAnemometer?.WindSpeed) }
@@ -125,9 +134,13 @@ export async function fetchBuoys(key: string, stations: Station[]): Promise<Buoy
   })
 }
 
-/** The tide gauges' sea levels; a gauge with none in the last 48 hours is left out. */
+/**
+ * The tide gauges' sea levels over the last 30 hours; a gauge with none is left out. The model
+ * starts at midnight UTC yesterday, so older readings would match no model hour, and 30 hours
+ * always leave the overlap the correction needs (see weather.ts).
+ */
 export async function fetchTides(key: string, stations: Station[]): Promise<TideGauge[]> {
-  const records = await fetchObservations(key, stations, 'TideHeight')
+  const records = await fetchObservations(key, stations, 'TideHeight', 30)
   return stations.flatMap((station) => {
     const levels = series(records.get(station.id) ?? [], (e) => e.TideHeight)
     return levels.length ? [{ ...station, levels }] : []

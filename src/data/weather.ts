@@ -421,8 +421,12 @@ function correctSea(sea: Float32Array[], times: number[], buoys: Buoy[]): Observ
  * gauges stand in harbours and river mouths the 8 km model does not resolve.
  */
 const TIDE_REACH: Reach = { km: 30, s: 6 * 3600, modelWeight: 0.1 }
-/** A gauge needs this many hours beside the model to find its datum against mean sea level. */
-const MIN_TIDE_HOURS = 24
+/**
+ * A gauge needs this many hours beside the model to find its datum against mean sea level: most of
+ * a day, which spans the semidiurnal tide's cycles. Just after the model's day turns, at midnight
+ * UTC, it reaches back only 24 hours and the gauges lag an hour, so a full day would be too many.
+ */
+const MIN_TIDE_HOURS = 20
 
 /**
  * Shifts the modelled sea level toward the tide gauges, in place. Each gauge measures against its

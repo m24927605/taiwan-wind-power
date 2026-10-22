@@ -94,7 +94,7 @@ describe('tide gauge correction', () => {
     expect(seaLevelAt(weather, 71 * HOUR, bx, bz) - modelTide(71 * HOUR)).toBeLessThan(0.05)
   })
 
-  it('needs a day of overlap to trust a gauge', () => {
+  it('needs most of a day of overlap to trust a gauge', () => {
     const short = parseWeather(payload({ tides: [{ ...STATION, levels: levels.slice(0, 12) }] }), 'live')
     expect(short.observed.tide).toBeNull()
     expect(weather.observed.tide).toEqual({ stations: 1, at: 47 * HOUR })
