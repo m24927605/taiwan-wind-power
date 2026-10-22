@@ -1,5 +1,5 @@
 import { WIND_FARMS } from '../../data/windfarms'
-import { windAt, type Weather } from '../../data/weather'
+import { hourIndex, windAt, type Weather } from '../../data/weather'
 import { lonLatToWorld } from '../../geo/domain'
 import { TURBINE, powerAt, rpmAt } from './spec'
 
@@ -51,11 +51,31 @@ export const farmDynamics = {
   rpm: new Float32Array(n),
   /** Per-turbine output, MW. */
   power: new Float32Array(n),
+  /** 1 while the farm is shut down by high wind. */
+  shutDown: new Uint8Array(n),
   initialised: false,
 }
 
 function shortestAngle(from: number, to: number): number {
   return ((((to - from) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI
+}
+
+/**
+ * Whether a farm stands shut down at time t, given its wind there: once the wind reaches cut-out it
+ * stays down until the wind falls below the restart speed. Worked out from the hourly wind rather
+ * than carried from frame to frame, so it holds wherever the timeline is scrubbed to. The wind is
+ * interpolated linearly, so between samples it never goes beyond them and the samples suffice.
+ */
+function shutDownAt(weather: Weather, farm: number, t: number, speed: number): boolean {
+  const { cutOutMs, restartMs } = TURBINE
+  if (speed >= cutOutMs) return true
+  if (speed < restartMs) return false
+  const w = weather.wind[farm]
+  for (let h = Math.floor(hourIndex(weather, t)); h >= 0; h--) {
+    if (w[h * 2] >= cutOutMs) return true
+    if (w[h * 2] < restartMs) return false
+  }
+  return false
 }
 
 export function advanceFarms(weather: Weather, time: number, dt: number) {
@@ -67,10 +87,12 @@ export function advanceFarms(weather: Weather, time: number, dt: number) {
     farmDynamics.yaw[f] = farmDynamics.initialised
       ? farmDynamics.yaw[f] + shortestAngle(farmDynamics.yaw[f], target) * Math.min(1, dt * 0.8)
       : target
-    const rpm = rpmAt(speed)
+    const shutDown = shutDownAt(weather, f, time, speed)
+    farmDynamics.shutDown[f] = shutDown ? 1 : 0
+    const rpm = rpmAt(speed, shutDown)
     farmDynamics.rpm[f] = farmDynamics.initialised ? farmDynamics.rpm[f] + (rpm - farmDynamics.rpm[f]) * Math.min(1, dt * 0.5) : rpm
     farmDynamics.spin[f] = (farmDynamics.spin[f] + (farmDynamics.rpm[f] / 60) * Math.PI * 2 * dt) % (Math.PI * 2)
-    farmDynamics.power[f] = powerAt(speed) * (WIND_FARMS[f].ratedMW / TURBINE.ratedPowerMW)
+    farmDynamics.power[f] = powerAt(speed, shutDown) * (WIND_FARMS[f].ratedMW / TURBINE.ratedPowerMW)
   }
   farmDynamics.initialised = true
 }

@@ -6,19 +6,18 @@ import { useT } from '../i18n'
 import { useStore } from '../state'
 import { compass8, useTicker } from './format'
 
-const CHART = { w: 232, h: 92, maxWind: 28 }
+const CHART = { w: 232, h: 92, maxWind: 34 }
 
-function PowerCurve({ wind, label }: { wind: number; label: string }) {
-  const x = (v: number) => (v / CHART.maxWind) * CHART.w
+function PowerCurve({ wind, output, label }: { wind: number; output: number; label: string }) {
+  const x = (v: number) => (Math.min(v, CHART.maxWind) / CHART.maxWind) * CHART.w
   const y = (p: number) => CHART.h - (p / TURBINE.ratedPowerMW) * (CHART.h - 10) - 2
   const path = Array.from({ length: 141 }, (_, i) => {
     const v = (i / 140) * CHART.maxWind
     return `${i ? 'L' : 'M'}${x(v).toFixed(1)},${y(powerAt(v)).toFixed(1)}`
   }).join('')
-  const p = powerAt(wind)
   return (
     <svg className="curve" viewBox={`0 0 ${CHART.w} ${CHART.h + 16}`} role="img" aria-label={label}>
-      {[TURBINE.cutInMs, TURBINE.ratedMs, TURBINE.cutOutMs].map((v) => (
+      {[TURBINE.cutInMs, TURBINE.ratedMs, TURBINE.derateMs, TURBINE.cutOutMs].map((v) => (
         <g key={v}>
           <line x1={x(v)} x2={x(v)} y1={4} y2={CHART.h} className="curve__grid" />
           <text x={x(v)} y={CHART.h + 12} className="curve__tick">
@@ -27,8 +26,8 @@ function PowerCurve({ wind, label }: { wind: number; label: string }) {
         </g>
       ))}
       <path d={path} className="curve__line" />
-      <line x1={x(wind)} x2={x(wind)} y1={y(p)} y2={CHART.h} className="curve__probe" />
-      <circle cx={x(wind)} cy={y(p)} r={4} className="curve__dot" />
+      <line x1={x(wind)} x2={x(wind)} y1={y(output)} y2={CHART.h} className="curve__probe" />
+      <circle cx={x(wind)} cy={y(output)} r={4} className="curve__dot" />
     </svg>
   )
 }
@@ -43,11 +42,20 @@ export function TurbinePanel() {
   const number = TURBINES.filter((o) => o.farm === t.farm).indexOf(t) + 1
   const wind = farmDynamics.wind[t.farm]
   const fromDeg = (((farmDynamics.windFrom[t.farm] * 180) / Math.PI) % 360 + 360) % 360
-  const scale = farm.ratedMW / TURBINE.ratedPowerMW
-  const output = powerAt(wind) * scale
+  const shutDown = farmDynamics.shutDown[t.farm] === 1
+  // On the shared curve, which is drawn for the 8 MW reference machine.
+  const reference = powerAt(wind, shutDown)
+  const output = reference * (farm.ratedMW / TURBINE.ratedPowerMW)
   const [lon, lat] = worldToLonLat(t.x, t.z)
-  const state =
-    wind < TURBINE.cutInMs ? tr.stateIdle : wind >= TURBINE.cutOutMs ? tr.stateCutOut : wind >= TURBINE.ratedMs ? tr.stateRated : tr.statePartial
+  const state = shutDown
+    ? tr.stateCutOut(TURBINE.restartMs)
+    : wind < TURBINE.cutInMs
+      ? tr.stateIdle
+      : wind >= TURBINE.derateMs
+        ? tr.stateDerated
+        : wind >= TURBINE.ratedMs
+          ? tr.stateRated
+          : tr.statePartial
   // The farm's own-language name leads; the other one is the kicker.
   const [name, kicker] = tr.lang === 'zh' ? [farm.name, farm.nameEn] : [farm.nameEn, farm.name]
 
@@ -103,7 +111,7 @@ export function TurbinePanel() {
       </dl>
       <div className="panel__chart">
         <div className="panel__chart-title">{tr.powerCurveTitle}</div>
-        <PowerCurve wind={wind} label={tr.powerCurve} />
+        <PowerCurve wind={wind} output={reference} label={tr.powerCurve} />
       </div>
       <p className="panel__foot">{tr.turbineFoot}</p>
     </aside>

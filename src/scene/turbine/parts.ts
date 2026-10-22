@@ -2,7 +2,7 @@ import { WIND_FARMS } from '../../data/windfarms'
 import type { Lang } from '../../i18n'
 import { compass8 } from '../../ui/format'
 import { farmDynamics } from './dynamics'
-import { TURBINE, powerAt } from './spec'
+import { TURBINE } from './spec'
 
 /** Medium-speed drivetrain: two planetary stages between the main shaft and the generator. */
 const GEAR_RATIO = 40
@@ -29,7 +29,7 @@ export interface Part {
   live: (farm: number, lang: Lang) => Reading
 }
 
-const farmOutputMW = (farm: number) => (powerAt(farmDynamics.wind[farm]) * WIND_FARMS[farm].ratedMW) / TURBINE.ratedPowerMW
+const farmOutputMW = (farm: number) => farmDynamics.power[farm]
 
 export const PARTS: Part[] = [
   {
