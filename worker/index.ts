@@ -27,7 +27,8 @@ const BROWSER_TTL_S = 60
 const CORS = { 'access-control-allow-origin': '*' }
 
 async function fetchBytes(url: string): Promise<ArrayBuffer> {
-  const res = await fetch(url)
+  // Uncompressed: inflating 1.7 MB of gzip would cost more CPU than the rest of the run.
+  const res = await fetch(url, { headers: { 'accept-encoding': 'identity' } })
   if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`)
   return res.arrayBuffer()
 }
