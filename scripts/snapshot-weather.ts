@@ -9,7 +9,7 @@ import { createServer } from 'vite'
 
 const vite = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom', logLevel: 'error' })
 try {
-  const { fetchOpenMeteo, SNAPSHOT_RANGE } = (await vite.ssrLoadModule('/src/data/weather.ts')) as typeof import('../src/data/weather')
+  const { fetchOpenMeteo, SNAPSHOT_RANGE } = (await vite.ssrLoadModule('/src/data/openMeteo.ts')) as typeof import('../src/data/openMeteo')
   const snapshot = await fetchOpenMeteo(SNAPSHOT_RANGE)
   await mkdir('public/data', { recursive: true })
   await writeFile('public/data/weather-snapshot.json', JSON.stringify(snapshot))

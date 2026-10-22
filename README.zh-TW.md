@@ -29,6 +29,14 @@ npm run build
 每次推送到 `main` 都會自動建置，並發佈到 `gh-pages` 分支的 `app/` 資料夾（`.github/workflows/pages.yml`）；
 影片頁位於該分支的根目錄。
 
+氣象資料經由一個小型 Cloudflare Worker（`worker/`）取得：它替所有訪客統一抓取 Open-Meteo，並快取 30 分鐘。
+應用程式從 `VITE_WEATHER_SERVICE`（`.env.production`）讀取它的網址；未設定或連不上時，應用程式會自己抓取
+Open-Meteo。
+
+```bash
+npx wrangler deploy --config worker/wrangler.jsonc
+```
+
 ## 即時資料
 
 | 圖層 | 來源 | 說明 |
@@ -37,8 +45,8 @@ npm run build
 | 陸地地表 | AWS Terrain Tiles（Terrarium, z11） | 由 `scripts/build-terrain.ts` 烘焙成簡化後 113 萬三角形的 GLB（3.1 MB），真實比例 |
 | 陸地影像 | Sentinel-2 cloudless 2024, EOX | 由 `scripts/build-imagery.ts` 烘焙成整個範圍的 4096² WebP（1.2 MB）、本島的 4096 × 8192 WebP（4.2 MB，僅桌機）與 4096² 法線貼圖 |
 | 洋流 | Open-Meteo Marine API | 範圍內 24 × 14 網格（間距約 36 公里），逐時，昨天到未來三天 |
-| 海況 | Open-Meteo Marine API | 風浪與湧浪（波高、週期、方向），各取海峽中位數，即波譜的兩個峰 |
-| 輪轂高度風速 | Open-Meteo Forecast API，100 m | 每座風場一個點；驅動偏航、轉速、出力、白浪與雲的飄移 |
+| 海況 | Open-Meteo Marine API | 風浪與湧浪（波高、週期、方向），同一套網格，依鏡頭所在位置取樣；即波譜的兩個峰 |
+| 輪轂高度風速 | Open-Meteo Forecast API，100 m | 每座風場一個點；驅動偏航、轉速、出力與雲的飄移；白浪則依與鏡頭距離的平方反比混合各風場風速 |
 | 雲 | 向日葵 9 號 AHI，經 NASA GIBS | 唯一的雲來源：東經 113.5°–131.5°、北緯 16.5°–33°（相機看得到的全部範圍）每小時一張、約晚真實時間 30 分鐘的掃描，依場景時間按需載入。Band 13 紅外線（亮溫，陸地依氣溫遞減率修正），白天再加 Band 3 可見光，決定積雲的位置與高度，以及卷雲的分布。沒有掃描的時段不畫雲 |
 | 太陽、月亮與天空 | 日月位置 | 白天、黃昏與月光下的夜晚（真實月相）都跟著場景時鐘 |
 | 星空 | 耶魯亮星星表（BSC5，CDS V/50） | 由 `scripts/build-stars.ts` 烘焙：6 等以內的 5,080 顆恆星，依台灣上空的地方恆星時旋轉 |
@@ -78,7 +86,7 @@ scripts/            離線資產流程（Node，執行一次）
   build-artifact.ts   artifact 模式建置 -> 給 claude.ai 的單一內嵌頁面 + .gltf 模型
 src/
   geo/              範圍投影（經緯度 <-> 公里）、太陽位置、大地測量
-  data/             高程載入、Open-Meteo 客戶端（瀏覽器快取）、風場排列
+  data/             高程載入、Open-Meteo 請求與氣象客戶端、風場排列
   scene/            R3F 場景：天空、地形、黑潮 GPGPU、風場、主角風機
     ocean/            FFT 波浪模擬與海面著色
     camera.ts         命令式相機 API（飛到風機、風場、全景）
@@ -87,6 +95,7 @@ src/
     turbine/          GLB 存取、各風場動態、instanced LOD、剖面主角風機
   ui/               HUD、時間軸、工具列、風機面板、工程模式疊層
   state.ts          zustand store：階段、資料、場景時間、工具、統計
+worker/             氣象服務（Cloudflare Worker）：替所有訪客統一抓取 Open-Meteo
 ```
 
 每一幀的模擬狀態，例如各風場的轉子角度、偏航與風速，存放在一般的型別陣列（`farmDynamics`）中，
@@ -194,8 +203,10 @@ z12 影像，在其範圍邊緣淡入；手機與不支援 8192 貼圖的 GPU �
 **自適應品質。** `PerformanceMonitor` 在畫格耗時過長時以 0.25 為單位降低 DPR，有餘裕時再調回。
 DPR 超過 1.5 倍時停用 composer 中的 MSAA，因為成本大於效果。觸控裝置一開始就使用較少粒子。
 
-**資料預算。** Open-Meteo 把多點請求中的每個座標都算作一次呼叫。回應在 `localStorage` 中快取 30 分鐘，
-配合逐時更新的頻率，所以重新整理不需花費任何呼叫額度。
+**資料預算。** Open-Meteo 把多點請求中的每個座標都算作一次呼叫，並依 IP 限流（免費方案每分鐘 600 次），
+而每次載入要求 345 個座標。氣象服務每半小時替所有訪客發出一次這個請求，其餘由邊緣快取回應。當應用程式
+必須自己抓取 Open-Meteo 時，回應在 `localStorage` 中快取 30 分鐘，配合逐時更新的頻率，所以重新整理不需
+花費任何呼叫額度。
 
 ### 值得知道的陷阱
 

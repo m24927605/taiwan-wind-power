@@ -31,6 +31,14 @@ npm run build
 Every push to `main` builds the app and publishes it to the `gh-pages` branch under `app/`
 (`.github/workflows/pages.yml`); the film page sits at the root of that branch.
 
+The weather comes through a small Cloudflare Worker (`worker/`) that fetches Open-Meteo once for
+every visitor and caches it for 30 minutes. The app reads its origin from `VITE_WEATHER_SERVICE`
+(`.env.production`); without it, or when it is out of reach, the app fetches Open-Meteo itself.
+
+```bash
+npx wrangler deploy --config worker/wrangler.jsonc
+```
+
 ## What is live
 
 | Layer | Source | Notes |
@@ -39,8 +47,8 @@ Every push to `main` builds the app and publishes it to the `gh-pages` branch un
 | Land surface | AWS Terrain Tiles (Terrarium, z11) | Baked by `scripts/build-terrain.ts` into a simplified 1.13M-triangle GLB (3.1 MB), true scale |
 | Land imagery | Sentinel-2 cloudless 2024, EOX | Baked by `scripts/build-imagery.ts` into a 4096² WebP over the domain (1.2 MB), a 4096 × 8192 WebP over the island (4.2 MB, desktop only) and a 4096² normal map |
 | Ocean currents | Open-Meteo Marine API | 24 × 14 grid over the domain (about 36 km apart), hourly, yesterday through three days ahead |
-| Sea state | Open-Meteo Marine API | Wind sea and swell (height, period, direction), each a median over the strait; the two peaks of the wave spectrum |
-| Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm, output, whitecaps and cloud drift |
+| Sea state | Open-Meteo Marine API | Wind sea and swell (height, period, direction) on the same grid, sampled where the camera is; the two peaks of the wave spectrum |
+| Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm, output and cloud drift, and the whitecaps, blended between farms by inverse squared distance from the camera |
 | Clouds | Himawari-9 AHI via NASA GIBS | The only clouds: hourly scans over 113.5–131.5 E, 16.5–33 N (everything the camera can see), about 30 minutes behind real time, loaded as scene time needs them. Band 13 infrared (brightness temperature, lapse-corrected over land) and, by day, band 3 visible place the cumulus, set its height and lay the cirrus. Hours with no scan have no clouds |
 | Sun, moon and sky | Solar and lunar positions | Day, dusk and moonlit night (at the real phase) follow the scene clock |
 | Stars | Yale Bright Star Catalogue (BSC5, CDS V/50) | Baked by `scripts/build-stars.ts`: the 5,080 stars down to magnitude 6, turned to local sidereal time over Taiwan |
@@ -89,7 +97,7 @@ scripts/            offline asset pipeline (Node, run once)
   build-artifact.ts   artifact-mode build -> one inlined page + .gltf models for claude.ai
 src/
   geo/              domain projection (lon/lat <-> km), solar position, geodesic
-  data/             elevation loader, Open-Meteo client (browser-cached), wind farm layout
+  data/             elevation loader, Open-Meteo requests and weather client, wind farm layout
   scene/            R3F scene: sky, terrain, Kuroshio GPGPU, wind farms, hero turbine
     ocean/            FFT wave simulation and ocean shading
     camera.ts         imperative camera API (fly to turbine, farm, overview)
@@ -98,6 +106,7 @@ src/
     turbine/          GLB access, per-farm dynamics, instanced LOD, cutaway hero
   ui/               HUD, timeline, toolbar, turbine panel, engineering overlay
   state.ts          zustand store: stage, data, scene time, tools, stats
+worker/             weather service (Cloudflare Worker): Open-Meteo once for every visitor
 ```
 
 Per-frame simulation state, such as rotor angle, yaw and wind per farm, lives in plain typed
@@ -249,9 +258,11 @@ comes with it.
 long, and back up when there is headroom. MSAA in the composer is disabled above 1.5× DPR, where
 it costs more than it shows. Touch devices start with fewer particles.
 
-**Data budget.** Open-Meteo counts every coordinate of a multi-point request as one call.
-Responses are cached in `localStorage` for 30 minutes, matching the hourly update cadence, so
-reloads cost nothing.
+**Data budget.** Open-Meteo counts every coordinate of a multi-point request as one call, against
+a per-IP limit (600 a minute on the free tier), and one load asks for 345 coordinates. The weather
+service makes that request once per half hour for every visitor, from the edge cache. When the
+app has to fetch Open-Meteo itself, the response is kept in `localStorage` for 30 minutes,
+matching the hourly update cadence, so reloads cost nothing.
 
 ### Pitfalls worth knowing
 

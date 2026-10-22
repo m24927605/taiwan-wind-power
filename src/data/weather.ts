@@ -1,13 +1,11 @@
-import { DOMAIN, worldToDomainUv } from '../geo/domain'
-import { WIND_FARMS } from './windfarms'
+import { worldToDomainUv } from '../geo/domain'
+import { CURRENT_GRID, SEA_COMPONENTS, fetchOpenMeteo, getJson, type OpenMeteo } from './openMeteo'
 
-// Live hourly ocean currents and sea state (Open-Meteo Marine) on a grid over the domain, and
-// hub-height wind (Open-Meteo Forecast) at every wind farm, from yesterday through
-// three days ahead. Where Open-Meteo cannot be reached (a sandboxed host), a snapshot bundled at deploy
-// time by scripts/snapshot-weather.ts stands in, and says so.
-
-/** About 36 km between grid points both ways over the domain. */
-export const CURRENT_GRID = { cols: 24, rows: 14 } as const
+// Live hourly ocean currents and sea state on a grid over the domain, and hub-height wind at every
+// wind farm, from yesterday through three days ahead (see openMeteo.ts). They come from the shared
+// weather service (worker/), or from Open-Meteo directly when it is out of reach; where neither
+// can be reached (a sandboxed host), a snapshot bundled at deploy time by
+// scripts/snapshot-weather.ts stands in, and says so.
 
 export interface Weather {
   /** Hourly timestamps, unix seconds. */
@@ -27,90 +25,49 @@ export interface Weather {
   source: 'live' | 'snapshot'
 }
 
-const LIVE_RANGE = 'past_days=1&forecast_days=3&timeformat=unixtime'
-/** A snapshot has to last until the next deploy, so it reaches as far ahead as the marine model. */
-export const SNAPSHOT_RANGE = 'past_days=1&forecast_days=7&timeformat=unixtime'
 const SNAPSHOT_URL = 'data/weather-snapshot.json'
 
-function gridCoordinates() {
-  const lats: number[] = []
-  const lons: number[] = []
-  for (let r = 0; r < CURRENT_GRID.rows; r++) {
-    for (let c = 0; c < CURRENT_GRID.cols; c++) {
-      lats.push(+(DOMAIN.north - (r / (CURRENT_GRID.rows - 1)) * (DOMAIN.north - DOMAIN.south)).toFixed(3))
-      lons.push(+(DOMAIN.west + (c / (CURRENT_GRID.cols - 1)) * (DOMAIN.east - DOMAIN.west)).toFixed(3))
-    }
-  }
-  return { lats, lons }
-}
+/** Values per grid point in a sea-state frame: four per component. */
+const SEA_STRIDE = SEA_COMPONENTS.length * 4
 
-interface Hourly<K extends string> {
-  hourly: { time: number[] } & Record<K, (number | null)[]>
-}
+/** The shared weather service (worker/), which fetches Open-Meteo once for every visitor. */
+const WEATHER_SERVICE = import.meta.env.VITE_WEATHER_SERVICE
 
-// Open-Meteo bills every coordinate of a multi-point request as one call, and the data only
-// changes hourly, so responses are kept per browser for half an hour.
+// Open-Meteo bills every coordinate of a multi-point request as one call against the visitor's
+// own quota, and the data only changes hourly, so a direct fetch is kept per browser for half an hour.
 const CACHE_TTL_MS = 30 * 60 * 1000
+const CACHE_KEY = 'wind-tide:open-meteo'
 
-async function getJson<T>(url: string): Promise<{ at: number; body: T }> {
-  const key = `wind-tide:${url}`
+async function fetchOpenMeteoCached(): Promise<OpenMeteo> {
   try {
-    const cached = localStorage.getItem(key)
+    const cached = localStorage.getItem(CACHE_KEY)
     if (cached) {
-      const entry = JSON.parse(cached) as { at: number; body: T }
+      const entry = JSON.parse(cached) as OpenMeteo
       if (Date.now() - entry.at < CACHE_TTL_MS) return entry
     }
   } catch {
     // Storage unavailable or corrupt: fall through to the network.
   }
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`)
-  const entry = { at: Date.now(), body: (await res.json()) as T }
+  const entry = await fetchOpenMeteo()
   try {
-    localStorage.setItem(key, JSON.stringify(entry))
+    localStorage.setItem(CACHE_KEY, JSON.stringify(entry))
   } catch {
     // Quota exceeded or storage blocked: the live response is still used.
   }
   return entry
 }
 
-const SEA_COMPONENTS = ['wind_wave', 'swell_wave'] as const
-/** Values per grid point in a sea-state frame: four per component. */
-const SEA_STRIDE = SEA_COMPONENTS.length * 4
-type MarineVariable =
-  | 'ocean_current_velocity'
-  | 'ocean_current_direction'
-  | `${(typeof SEA_COMPONENTS)[number]}_${'height' | 'period' | 'direction'}`
-
-/** Raw Open-Meteo responses, as fetched live and as stored in the snapshot. */
-export interface OpenMeteo {
-  /** Retrieval time, unix milliseconds. */
-  at: number
-  marine: Hourly<MarineVariable>[]
-  wind: Hourly<'wind_speed_100m' | 'wind_direction_100m'>[]
-}
-
-export async function fetchOpenMeteo(range = LIVE_RANGE): Promise<OpenMeteo> {
-  const { lats, lons } = gridCoordinates()
-  const [marine, wind] = await Promise.all([
-    getJson<OpenMeteo['marine']>(
-      `https://marine-api.open-meteo.com/v1/marine?latitude=${lats}&longitude=${lons}` +
-        `&hourly=ocean_current_velocity,ocean_current_direction,` +
-        SEA_COMPONENTS.map((c) => `${c}_height,${c}_period,${c}_direction`).join(',') +
-        `&${range}`,
-    ),
-    getJson<OpenMeteo['wind']>(
-      `https://api.open-meteo.com/v1/forecast?latitude=${WIND_FARMS.map((f) => f.lat)}` +
-        `&longitude=${WIND_FARMS.map((f) => f.lon)}&hourly=wind_speed_100m,wind_direction_100m` +
-        `&wind_speed_unit=ms&${range}`,
-    ),
-  ])
-  return { at: Math.min(marine.at, wind.at), marine: marine.body, wind: wind.body }
-}
-
+/** The weather service, then Open-Meteo directly, then the bundled snapshot. */
 export async function fetchWeather(): Promise<Weather> {
+  if (WEATHER_SERVICE) {
+    try {
+      return parseWeather(await getJson<OpenMeteo>(`${WEATHER_SERVICE}/weather`), 'live')
+    } catch {
+      // Out of reach or failing: fetch Open-Meteo here instead.
+    }
+  }
   try {
-    return parseWeather(await fetchOpenMeteo(), 'live')
+    return parseWeather(await fetchOpenMeteoCached(), 'live')
   } catch (liveError) {
     const res = await fetch(SNAPSHOT_URL).catch(() => null)
     if (!res?.ok) throw liveError

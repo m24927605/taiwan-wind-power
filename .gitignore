@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 dist-artifact
+
+# Worker secrets and local state for development
+.dev.vars
+.wrangler
