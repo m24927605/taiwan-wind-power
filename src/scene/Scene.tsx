@@ -15,6 +15,7 @@ import { Kuroshio } from './Kuroshio'
 import { Layer } from './Layer'
 import { Measure } from './Measure'
 import { Ocean } from './ocean/Ocean'
+import { Overlay } from './Overlay'
 import { SceneClock } from './SceneClock'
 import { Sky, SkyEnvironment } from './Sky'
 import { Stars } from './Stars'
@@ -77,12 +78,14 @@ export function Scene() {
       <Layer name="hero turbine">
         <HeroTurbine />
       </Layer>
-      <FarmBounds />
       <Interaction />
       <Measure />
       {/* MSAA only pays off below ~1.5x; at retina density the extra samples cost more than they show. */}
       <EffectComposer multisampling={dpr > 1.5 ? 0 : 4}>
         <CloudLayer dpr={dpr} />
+        <Overlay>
+          <FarmBounds />
+        </Overlay>
         <Bloom mipmapBlur intensity={0.6} luminanceThreshold={2.2} luminanceSmoothing={0.5} radius={0.7} />
         <Vignette offset={0.32} darkness={0.55} />
         {/* The scene is shaded in exposed scene radiance; ACES brings highlights into range. */}

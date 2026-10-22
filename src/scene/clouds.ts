@@ -34,6 +34,10 @@ export const clouds = {
   uSatWeight: { value: 0 },
   /** World x and z of the scanned area's north-west corner, and the reciprocal of its width and depth. */
   uSatBounds: { value: satelliteBounds() },
+  /** World position and radius (km) of what the clouds part over, as seen from the eye. */
+  uCloudClear: { value: new THREE.Vector4() },
+  /** How far they part there, 0..1. */
+  uCloudClearStrength: { value: 0 },
 }
 
 export const CLOUDS_GLSL = /* glsl */ `
@@ -48,6 +52,8 @@ uniform sampler2D uSatB;
 uniform float uSatBlend;
 uniform float uSatWeight;
 uniform vec4 uSatBounds;
+uniform vec4 uCloudClear;
+uniform float uCloudClearStrength;
 
 const float CLOUD_BOTTOM = ${CLOUD_BOTTOM.toFixed(2)};
 const float CLOUD_TOP = ${CLOUD_TOP.toFixed(2)};
@@ -73,6 +79,17 @@ float satelliteWeight(vec2 xz) {
 // From the overview the map matters more than the weather: clouds thin out with the eye's altitude.
 float cloudFade() { return 1.0 - 0.65 * smoothstep(15.0, 120.0, uCameraPos.y); }
 
+// What is left of the cloud at p where it parts over uCloudClear: open across that disc as the eye
+// sees it, closing again over half its radius beyond. Shadows and light see the same gap.
+float cloudClearing(vec3 p) {
+  if (uCloudClearStrength <= 0.0) return 1.0;
+  vec3 toClear = uCloudClear.xyz - uCameraPos;
+  float d = length(toClear);
+  float radius = atan(uCloudClear.w / d);
+  float c = dot(normalize(p - uCameraPos), toClear / d);
+  return 1.0 - uCloudClearStrength * smoothstep(cos(radius * 1.5), cos(radius), c);
+}
+
 // The world is a flat map, so the layer is flat too: a spherical shell would sink below the map's
 // sea a few hundred kilometres out, where the overview looks.
 float cloudAltitude(float t, float dy, float h) { return h + dy * t; }
@@ -91,7 +108,7 @@ float cloudDensity(vec3 p, float detail) {
   float h01 = (p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM);
   if (h01 <= 0.0 || h01 >= 1.0) return 0.0;
   vec2 q = p.xz - uCloudOffset;
-  float satW = uSatWeight > 0.0 ? satelliteWeight(p.xz) : 0.0;
+  float satW = uSatWeight > 0.0 ? satelliteWeight(p.xz) * cloudClearing(p) : 0.0;
   if (satW <= 0.0) return 0.0;
   // Explicit LOD: ray-march samples jump between neighbouring pixels, so derivatives mean nothing.
   vec3 weather = textureLod(uCloudWeather, q / 52.0, 0.0).rgb;

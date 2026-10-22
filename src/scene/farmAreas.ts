@@ -67,6 +67,28 @@ export function farmViewDistance(area: FarmArea): number {
   return (area.radius * 2.2 + 2) * Math.hypot(0.55, 0.55, 0.8)
 }
 
+/** Distance from a point to a farm's centre, in fly-to view distances. */
+function viewDistances(area: FarmArea, p: THREE.Vector3): number {
+  return Math.hypot(p.x - area.center[0], p.y, p.z - area.center[1]) / farmViewDistance(area)
+}
+
+/** Within this many fly-to view distances, a farm's turbines are picked one by one. */
+const NEAR = 1.5
+
+/** The farm the eye has come in to, where its turbines are picked one by one; the nearest wins. */
+export function nearFarm(eye: THREE.Vector3): number | null {
+  let best: number | null = null
+  let bestD = NEAR
+  for (let i = 0; i < FARM_AREAS.length; i++) {
+    const d = viewDistances(FARM_AREAS[i], eye)
+    if (d <= bestD) {
+      bestD = d
+      best = i
+    }
+  }
+  return best
+}
+
 const hit = new THREE.Vector3()
 
 /**
@@ -77,12 +99,11 @@ export function pickFarm(ray: THREE.Ray): number | null {
   if (ray.direction.y >= 0) return null
   ray.at((AREA_LIFT - ray.origin.y) / ray.direction.y, hit)
   for (let i = 0; i < FARM_AREAS.length; i++) {
-    const { along, across, extent, center } = FARM_AREAS[i]
+    const { along, across, extent } = FARM_AREAS[i]
     const a = hit.x * along[0] + hit.z * along[1]
     const b = hit.x * across[0] + hit.z * across[1]
     if (a < extent[0] || a > extent[1] || b < extent[2] || b > extent[3]) continue
-    const d = Math.hypot(ray.origin.x - center[0], ray.origin.y, ray.origin.z - center[1])
-    return d > farmViewDistance(FARM_AREAS[i]) * 1.5 ? i : null
+    return viewDistances(FARM_AREAS[i], ray.origin) > NEAR ? i : null
   }
   return null
 }
