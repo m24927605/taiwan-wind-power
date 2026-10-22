@@ -33,7 +33,8 @@ Every push to `main` builds the app and publishes it to the `gh-pages` branch un
 (`.github/workflows/pages.yml`); the film page sits at the root of that branch.
 
 The weather comes through a small Cloudflare Worker (`worker/`). On a schedule it fetches
-Open-Meteo every hour and the CWA buoys every ten minutes into KV, and every visitor is served
+Open-Meteo every hour, and CWA's buoys and tide gauges in turn between, into KV (each ten-minute
+run does one share, which keeps it inside the free plan's CPU budget), and every visitor is served
 that stored copy, so upstream calls stay fixed whatever the traffic and a failed fetch leaves the
 last good copy in place; the CWA key lives only there. The app refreshes every ten minutes while
 open. It reads the Worker's origin from `VITE_WEATHER_SERVICE` (`.env.production`); without it, or
@@ -58,7 +59,10 @@ For `wrangler dev`, put the key in `worker/.dev.vars` (`CWA_API_KEY=...`, git-ig
 | Ocean currents | Open-Meteo Marine API | 24 × 14 grid over the domain (about 36 km apart), hourly, yesterday through three days ahead |
 | Sea state | Open-Meteo Marine API | Wind sea and swell (height, period, direction) on the same grid, sampled where the camera is; the two peaks of the wave spectrum |
 | Measured waves | Central Weather Administration open data (O-B0075-001, O-B0076-001) | Hourly significant wave height at the moored buoys in the domain (24 in October 2026), the last 48 hours. Each measurement scales the modelled heights toward itself within about 30 km and 6 hours (log ratio, at most ×2 either way), so near the buoys the sea is the measured one and far into the forecast the model stands |
+| Sea level | Open-Meteo Marine API (MeteoFrance SMOC, about 8 km) | Sea level against mean sea level, tides included, on the same grid. The whole sea surface rises and falls with it at the camera, so the waterline moves on the turbine foundations; the metrics panel reads it at the farms. Land is lifted 4 m above mean sea level, beyond the strait's highest tides. The bathymetry (about 800 m a texel) is too coarse to show the tidal flats drying out, so they are not drawn |
+| Measured tide | CWA open data (O-B0075-001) | Hourly sea level at the tide gauges in the domain (40 reporting in October 2026), the last 48 hours. Each gauge reads against its own datum, so its mean offset from the model over the hours both cover is taken out; the rest (the timing and range of the tide where the model is wrong, and surges) pulls the modelled sea level within about 30 km and 6 hours |
 | Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm, output and cloud drift, and the whitecaps, blended between farms by inverse squared distance from the camera |
+| Measured wind | CWA open data (O-B0075-001) and Open-Meteo 10 m wind | The buoys within 80 km of a farm that measure wind (six in October 2026). Each measurement, taken from the anemometer (about 3.5 m up; CWA does not publish the height) to 10 m by the log law, gives a ratio to the model's 10 m wind at the buoy, and the farms' hub-height wind takes the blended ratio within about 40 km and 6 hours. The model keeps more weight than against the waves, since anemometers ride among breaking seas |
 | Clouds | Himawari-9 AHI via NASA GIBS | The only clouds: hourly scans over 113.5–131.5 E, 16.5–33 N (everything the camera can see), about 30 minutes behind real time, loaded as scene time needs them. Band 13 infrared (brightness temperature, lapse-corrected over land) and, by day, band 3 visible place the cumulus, set its height and lay the cirrus. Hours with no scan have no clouds |
 | Sun, moon and sky | Solar and lunar positions | Day, dusk and moonlit night (at the real phase) follow the scene clock |
 | Stars | Yale Bright Star Catalogue (BSC5, CDS V/50) | Baked by `scripts/build-stars.ts`: the 5,080 stars down to magnitude 6, turned to local sidereal time over Taiwan |
@@ -271,11 +275,12 @@ long, and back up when there is headroom. MSAA in the composer is disabled above
 it costs more than it shows. Touch devices start with fewer particles.
 
 **Data budget.** Open-Meteo counts every coordinate of a multi-point request as one call, against
-a per-IP limit (600 a minute and 10,000 a day on the free tier). One load asks for 301
+a per-IP limit (600 a minute and 10,000 a day on the free tier). One load asks for about 307
 coordinates: the grid's sea points (the 44 on land, where the marine model has no data, are left out
-and filled from their neighbours) and the farms. The weather service makes that request 24 times a
-day for every visitor, about 7,200 calls. When the app has to fetch Open-Meteo itself, the response is kept in `localStorage` for 30
-minutes, matching the hourly update cadence, so reloads cost nothing.
+and filled from their neighbours), the farms and the buoys that correct their wind. The weather
+service makes that request 24 times a day for every visitor, about 7,400 calls. When the app has to fetch Open-Meteo itself, the response
+is kept in `localStorage` for 30 minutes, matching the hourly update cadence, so reloads cost
+nothing.
 
 ### Pitfalls worth knowing
 
@@ -337,6 +342,6 @@ rucisko, sea wind by Potapooo, gulls by steaq and Snapper4298, wind turbine by e
 
 Imagery: Sentinel-2 cloudless 2024 – https://s2maps.eu by EOX IT Services GmbH (contains modified
 Copernicus Sentinel data 2024), licensed CC BY-NC-SA 4.0. Elevation: AWS Terrain Tiles. Weather:
-Open-Meteo; measured waves: Central Weather Administration open data. Clouds: Himawari-9 (JMA) imagery through NASA GIBS. Stars: Yale Bright Star Catalogue,
+Open-Meteo; measured waves, wind and tides: Central Weather Administration open data. Clouds: Himawari-9 (JMA) imagery through NASA GIBS. Stars: Yale Bright Star Catalogue,
 5th revised edition (Hoffleit & Warren 1991), from CDS. Moon: Solar System Scope textures (CC BY
 4.0), based on NASA imagery. Film narration: Gemini TTS.

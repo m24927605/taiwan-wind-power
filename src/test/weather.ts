@@ -5,5 +5,14 @@ import type { Weather } from '../data/weather'
 export function windOnly(speeds: number[], start = 0): Weather {
   const times = speeds.map((_, h) => start + h * 3600)
   const series = new Float32Array(speeds.flatMap((s) => [s, 0]))
-  return { times, currents: [], sea: [], wind: WIND_FARMS.map(() => series), fetchedAt: start, observed: { waves: null }, source: 'live' }
+  return {
+    times,
+    currents: [],
+    sea: [],
+    seaLevel: [],
+    wind: WIND_FARMS.map(() => series),
+    fetchedAt: start,
+    observed: { waves: null, wind: null, tide: null },
+    source: 'live',
+  }
 }

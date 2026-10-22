@@ -15,7 +15,10 @@ const DETAIL_URL = 'textures/imagery-taiwan.webp'
 const DETAIL_SIZE = 8192
 const COARSE_POINTER = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
 const DETAIL_WORLD = worldExtent(DETAIL)
-/** Matches scripts/build-terrain.ts: land is lifted this far above the ocean plane. */
+/**
+ * Matches scripts/build-terrain.ts: land is lifted this far above mean sea level, beyond the reach
+ * of the highest tides in the strait, so the rising sea never laps over it.
+ */
 const LAND_LIFT_KM = 0.004
 
 // Sentinel-2 passes at about 10:30 local time, so the imagery carries morning sun from the

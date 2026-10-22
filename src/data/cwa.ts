@@ -1,34 +1,50 @@
 import { DOMAIN } from '../geo/domain'
 import type { OpenMeteo } from './openMeteo'
 
-// Wave heights measured by the Central Weather Administration's buoys: open data O-B0075-001
-// (the last 48 hours, hourly, about half an hour behind real time), placed by the station list
-// O-B0076-001. Only moored buoys inside the domain count; tide gauges and shore-based wave stations
-// do not see the open sea. Both need a CWA key, so the weather service (worker/) fetches them: the
+// Measurements from the Central Weather Administration's open data: O-B0075-001 (the last 48
+// hours, hourly, about half an hour behind real time) from its moored buoys (wave height and
+// wind) and tide gauges (sea level), placed by the station list O-B0076-001. Only stations inside
+// the domain count. Both need a CWA key, so the weather service (worker/) fetches them: the
 // station list rarely changes and is fetched apart from the observations, which are asked for
-// only those stations and only the wave height, a twentieth of the full dataset.
+// only the stations and elements used, a fraction of the full dataset.
 
 const OBSERVATIONS = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-B0075-001'
 const STATIONS = 'https://opendata.cwa.gov.tw/fileapi/v1/opendataapi/O-B0076-001'
 
-export interface BuoyStation {
+export interface Station {
   id: string
   name: string
   lon: number
   lat: number
 }
 
-export interface Buoy extends BuoyStation {
-  /** Significant wave height per observed hour: [unix seconds, metres], oldest first. */
-  waves: [number, number][]
+export interface Stations {
+  buoys: Station[]
+  tideGauges: Station[]
 }
 
-/** What the weather service returns: the Open-Meteo responses and, when CWA answered, the buoys. */
+/** A series of hourly measurements: [unix seconds, value], oldest first. */
+export type Series = [number, number][]
+
+export interface Buoy extends Station {
+  /** Significant wave height, m. */
+  waves: Series
+  /** Wind speed at the buoy's anemometer, m/s. */
+  wind: Series
+}
+
+export interface TideGauge extends Station {
+  /** Sea level against the gauge's own datum, m. */
+  levels: Series
+}
+
+/** What the weather service returns: the Open-Meteo responses and, when CWA answered, the measurements. */
 export interface WeatherPayload extends OpenMeteo {
   buoys?: Buoy[]
+  tides?: TideGauge[]
 }
 
-interface Stations {
+interface StationList {
   cwaopendata: {
     Resources: {
       Resource: {
@@ -44,12 +60,18 @@ interface Stations {
   }
 }
 
+interface Elements {
+  WaveHeight?: string
+  TideHeight?: string
+  PrimaryAnemometer?: { WindSpeed?: string }
+}
+
 interface Observations {
   Records: {
     SeaSurfaceObs: {
       Location: {
         Station: { StationID: string }
-        StationObsTimes: { StationObsTime: { DateTime: string; WeatherElements: { WaveHeight?: string } }[] }
+        StationObsTimes: { StationObsTime: { DateTime: string; WeatherElements: Elements }[] }
       }[]
     }
   }
@@ -62,34 +84,59 @@ async function getCwa<T>(url: string, key: string, query = ''): Promise<T> {
   return (await res.json()) as T
 }
 
-/** The moored buoys inside the domain. */
-export async function fetchBuoyStations(key: string): Promise<BuoyStation[]> {
-  const stations = await getCwa<Stations>(STATIONS, key)
-  return stations.cwaopendata.Resources.Resource.Data.SeaSurfaceObs.Location.flatMap(({ Station: s }) => {
+/** The moored buoys and tide gauges inside the domain. */
+export async function fetchStations(key: string): Promise<Stations> {
+  const list = await getCwa<StationList>(STATIONS, key)
+  const stations: Stations = { buoys: [], tideGauges: [] }
+  for (const { Station: s } of list.cwaopendata.Resources.Resource.Data.SeaSurfaceObs.Location) {
     const lon = Number(s.StationLongitude)
     const lat = Number(s.StationLatitude)
-    const inside = lon >= DOMAIN.west && lon <= DOMAIN.east && lat >= DOMAIN.south && lat <= DOMAIN.north
-    return s.StationAttribute === '浮標站' && inside ? [{ id: s.StationID, name: s.StationName, lon, lat }] : []
+    if (lon < DOMAIN.west || lon > DOMAIN.east || lat < DOMAIN.south || lat > DOMAIN.north) continue
+    const station = { id: s.StationID, name: s.StationName, lon, lat }
+    if (s.StationAttribute === '浮標站') stations.buoys.push(station)
+    else if (s.StationAttribute === '潮位站') stations.tideGauges.push(station)
+  }
+  return stations
+}
+
+/** Each station's hourly records of the given elements, keyed by station id. */
+async function fetchObservations(key: string, stations: Station[], elements: string) {
+  const query = `&WeatherElement=${elements}&StationID=${stations.map((s) => s.id)}`
+  const observations = await getCwa<Observations>(OBSERVATIONS, key, query)
+  return new Map(
+    observations.Records.SeaSurfaceObs.Location.map((l) => [
+      l.Station.StationID,
+      l.StationObsTimes.StationObsTime.map((o) => ({ t: Date.parse(o.DateTime) / 1000, e: o.WeatherElements })),
+    ]),
+  )
+}
+
+/** One element's measurements, oldest first; missing values come as "None" or "-". */
+function series(records: { t: number; e: Elements }[], read: (e: Elements) => string | undefined): Series {
+  const out: Series = []
+  for (const { t, e } of records) {
+    const raw = read(e)
+    const value = Number(raw)
+    if (raw && Number.isFinite(value)) out.push([t, value])
+  }
+  return out.sort((a, b) => a[0] - b[0])
+}
+
+/** The buoys' wave heights and wind; a buoy with neither in the last 48 hours is left out. */
+export async function fetchBuoys(key: string, stations: Station[]): Promise<Buoy[]> {
+  const records = await fetchObservations(key, stations, 'WaveHeight,PrimaryAnemometer')
+  return stations.flatMap((station) => {
+    const r = records.get(station.id) ?? []
+    const buoy = { ...station, waves: series(r, (e) => e.WaveHeight), wind: series(r, (e) => e.PrimaryAnemometer?.WindSpeed) }
+    return buoy.waves.length || buoy.wind.length ? [buoy] : []
   })
 }
 
-/** The stations' wave heights; a station with none in the last 48 hours is left out. */
-export async function fetchBuoys(key: string, stations: BuoyStation[]): Promise<Buoy[]> {
-  const byId = new Map(stations.map((s) => [s.id, s]))
-  const observations = await getCwa<Observations>(OBSERVATIONS, key, `&WeatherElement=WaveHeight&StationID=${stations.map((s) => s.id)}`)
-  const buoys: Buoy[] = []
-  for (const location of observations.Records.SeaSurfaceObs.Location) {
-    const station = byId.get(location.Station.StationID)
-    if (!station) continue
-    const waves: [number, number][] = []
-    for (const obs of location.StationObsTimes.StationObsTime) {
-      // Missing values come as "None" or "-".
-      const height = Number(obs.WeatherElements.WaveHeight)
-      if (obs.WeatherElements.WaveHeight && Number.isFinite(height)) waves.push([Date.parse(obs.DateTime) / 1000, height])
-    }
-    if (waves.length === 0) continue
-    waves.sort((a, b) => a[0] - b[0])
-    buoys.push({ ...station, waves })
-  }
-  return buoys
+/** The tide gauges' sea levels; a gauge with none in the last 48 hours is left out. */
+export async function fetchTides(key: string, stations: Station[]): Promise<TideGauge[]> {
+  const records = await fetchObservations(key, stations, 'TideHeight')
+  return stations.flatMap((station) => {
+    const levels = series(records.get(station.id) ?? [], (e) => e.TideHeight)
+    return levels.length ? [{ ...station, levels }] : []
+  })
 }

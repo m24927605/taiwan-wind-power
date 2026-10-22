@@ -1,8 +1,10 @@
-import { DOMAIN } from '../geo/domain'
+import { DOMAIN, lonLatToWorld } from '../geo/domain'
+import type { Buoy, Station } from './cwa'
 import { WIND_FARMS } from './windfarms'
 
-// The Open-Meteo requests behind the app's weather: hourly ocean currents and sea state (Marine)
-// on a grid over the domain, and hub-height wind (Forecast) at every wind farm. Shared by the app,
+// The Open-Meteo requests behind the app's weather: hourly ocean currents, sea state and sea level
+// (Marine) on a grid over the domain, and hub-height wind (Forecast) at every wind farm, with the
+// surface wind at the buoys near them that measure it. Shared by the app,
 // the weather service (worker/) and the snapshot script, so the requests are defined once.
 
 /** About 36 km between grid points both ways over the domain. */
@@ -54,6 +56,7 @@ export const SEA_COMPONENTS = ['wind_wave', 'swell_wave'] as const
 type MarineVariable =
   | 'ocean_current_velocity'
   | 'ocean_current_direction'
+  | 'sea_level_height_msl'
   | `${(typeof SEA_COMPONENTS)[number]}_${'height' | 'period' | 'direction'}`
 
 /** Raw Open-Meteo responses, as fetched live and as stored in the snapshot. */
@@ -62,22 +65,42 @@ export interface OpenMeteo {
   at: number
   /** One per MARINE_POINTS entry. */
   marine: Hourly<MarineVariable>[]
-  wind: Hourly<'wind_speed_100m' | 'wind_direction_100m'>[]
+  /** One per wind farm, then one per windBuoys entry. */
+  wind: Hourly<'wind_speed_100m' | 'wind_direction_100m' | 'wind_speed_10m'>[]
+  /** Ids of the buoys whose modelled surface wind follows the farms' in `wind`. */
+  windBuoys?: string[]
 }
 
-/** The two requests behind the weather: the marine grid and the farms' hub-height wind. */
-export function openMeteoUrls(range = LIVE_RANGE): { marine: string; wind: string } {
+/** A buoy farther than this from every farm, km, says nothing about their wind (see weather.ts). */
+const WIND_BUOY_RANGE_KM = 80
+
+/** The buoys that measure wind near enough to a farm to correct it. */
+export function windBuoys(buoys: Buoy[]): Station[] {
+  const farms = WIND_FARMS.map((f) => lonLatToWorld(f.lon, f.lat))
+  return buoys.filter((b) => {
+    if (b.wind.length === 0) return false
+    const [x, z] = lonLatToWorld(b.lon, b.lat)
+    return farms.some(([fx, fz]) => Math.hypot(x - fx, z - fz) < WIND_BUOY_RANGE_KM)
+  })
+}
+
+/**
+ * The two requests behind the weather: the marine grid, and the wind at the farms and at the
+ * given buoys.
+ */
+export function openMeteoUrls(range = LIVE_RANGE, buoys: Station[] = []): { marine: string; wind: string } {
+  const sites = [...WIND_FARMS, ...buoys]
   const { lats, lons } = gridCoordinates()
   return {
     marine:
       `https://marine-api.open-meteo.com/v1/marine?latitude=${MARINE_POINTS.map((i) => lats[i])}` +
       `&longitude=${MARINE_POINTS.map((i) => lons[i])}` +
-      `&hourly=ocean_current_velocity,ocean_current_direction,` +
+      `&hourly=ocean_current_velocity,ocean_current_direction,sea_level_height_msl,` +
       SEA_COMPONENTS.map((c) => `${c}_height,${c}_period,${c}_direction`).join(',') +
       `&${range}`,
     wind:
-      `https://api.open-meteo.com/v1/forecast?latitude=${WIND_FARMS.map((f) => f.lat)}` +
-      `&longitude=${WIND_FARMS.map((f) => f.lon)}&hourly=wind_speed_100m,wind_direction_100m` +
+      `https://api.open-meteo.com/v1/forecast?latitude=${sites.map((s) => s.lat)}` +
+      `&longitude=${sites.map((s) => s.lon)}&hourly=wind_speed_100m,wind_direction_100m,wind_speed_10m` +
       `&wind_speed_unit=ms&${range}`,
   }
 }

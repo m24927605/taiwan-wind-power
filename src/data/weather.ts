@@ -1,10 +1,11 @@
 import { lonLatToWorld, worldToDomainUv } from '../geo/domain'
-import type { Buoy, WeatherPayload } from './cwa'
+import type { Buoy, Series, TideGauge, WeatherPayload } from './cwa'
 import { blend, pullsAt, type Reach, type Site } from './correction'
 import { CURRENT_GRID, MARINE_POINTS, SEA_COMPONENTS, fetchOpenMeteo, getJson, gridCoordinates, type OpenMeteo } from './openMeteo'
+import { WIND_FARMS } from './windfarms'
 
-// Live hourly ocean currents and sea state on a grid over the domain, and hub-height wind at every
-// wind farm, from yesterday through three days ahead (see openMeteo.ts). They come from the shared
+// Live hourly ocean currents, sea state and sea level on a grid over the domain, and hub-height
+// wind at every wind farm, each pulled toward what CWA's stations measure, from yesterday through three days ahead (see openMeteo.ts). They come from the shared
 // weather service (worker/), or from Open-Meteo directly when it is out of reach; where neither
 // can be reached (a sandboxed host), a snapshot bundled at deploy time by
 // scripts/snapshot-weather.ts stands in, and says so.
@@ -19,12 +20,14 @@ export interface Weather {
    * mean period s, sine and cosine of the direction it comes from], the wind sea then the swell.
    */
   sea: Float32Array[]
+  /** Per hour, on the current grid: sea level against mean sea level, tides included, m. */
+  seaLevel: Float32Array[]
   /** Per farm: [speed m/s, direction-from degrees] per hour, interleaved. */
   wind: Float32Array[]
   /** When the data was retrieved from Open-Meteo, unix seconds. */
   fetchedAt: number
   /** The measurements the model was corrected with, by kind; null where none came. */
-  observed: { waves: Observed | null }
+  observed: { waves: Observed | null; wind: Observed | null; tide: Observed | null }
   /** Fetched just now, or read from the bundled snapshot. */
   source: 'live' | 'snapshot'
 }
@@ -93,7 +96,7 @@ export async function fetchWeather(): Promise<Weather> {
   }
 }
 
-export function parseWeather({ at, marine, wind, buoys }: WeatherPayload, source: Weather['source']): Weather {
+export function parseWeather({ at, marine, wind, windBuoys, buoys = [], tides = [] }: WeatherPayload, source: Weather['source']): Weather {
   const times = marine[0].hourly.time
   const currents = times.map((_, h) => {
     const frame = new Float32Array(GRID_POINTS * 2)
@@ -131,21 +134,57 @@ export function parseWeather({ at, marine, wind, buoys }: WeatherPayload, source
     fillUnknown(frame, known, SEA_STRIDE)
     return frame
   })
-  if (buoys?.length) correctSea(sea, times, buoys)
-  const waves = buoys?.length ? { stations: buoys.length, at: Math.max(...buoys.map((b) => b.waves[b.waves.length - 1][0])) } : null
+  const waves = correctSea(sea, times, buoys)
 
-  const windByFarm = wind.map((farm) => {
-    const byTime = new Map(farm.hourly.time.map((t, i) => [t, i]))
-    const out = new Float32Array(times.length * 2)
-    times.forEach((t, h) => {
-      const i = byTime.get(t)
-      out[h * 2] = i === undefined ? 0 : (farm.hourly.wind_speed_100m[i] ?? 0)
-      out[h * 2 + 1] = i === undefined ? 0 : (farm.hourly.wind_direction_100m[i] ?? 0)
+  const seaLevel = times.map((_, h) => {
+    const frame = new Float32Array(GRID_POINTS)
+    const known = new Uint8Array(GRID_POINTS)
+    marine.forEach((point, m) => {
+      const level = point.hourly.sea_level_height_msl[h]
+      if (level === null) return
+      frame[MARINE_POINTS[m]] = level
+      known[MARINE_POINTS[m]] = 1
     })
-    return out
+    fillUnknown(frame, known, 1)
+    return frame
   })
+  const tide = correctSeaLevel(seaLevel, times, tides)
 
-  return { times, currents, sea, wind: windByFarm, fetchedAt: at / 1000, observed: { waves }, source }
+  // Hourly values of a point's series on the marine hours; 0 where it has none.
+  const onHours = (series: { time: number[] } & Record<string, (number | null)[]>, key: string) => {
+    const byTime = new Map(series.time.map((t, i) => [t, i]))
+    return times.map((t) => {
+      const i = byTime.get(t)
+      return i === undefined ? 0 : (series[key][i] ?? 0)
+    })
+  }
+  const windByFarm = wind.slice(0, WIND_FARMS.length).map(({ hourly }) => {
+    const speed = onHours(hourly, 'wind_speed_100m')
+    const from = onHours(hourly, 'wind_direction_100m')
+    return new Float32Array(times.flatMap((_, h) => [speed[h], from[h]]))
+  })
+  const surfaceSites = (windBuoys ?? []).flatMap((id, k) => {
+    const buoy = buoys.find((b) => b.id === id)
+    return buoy ? [{ buoy, modelled: onHours(wind[WIND_FARMS.length + k].hourly, 'wind_speed_10m') }] : []
+  })
+  const windObserved = correctWind(windByFarm, times, surfaceSites)
+
+  return {
+    times,
+    currents,
+    sea,
+    seaLevel,
+    wind: windByFarm,
+    fetchedAt: at / 1000,
+    observed: { waves, wind: windObserved, tide },
+    source,
+  }
+}
+
+/** What a set of stations measured: how many reported and the newest measurement; null if none. */
+function observed(series: Series[]): Observed | null {
+  const reported = series.filter((s) => s.length > 0)
+  return reported.length ? { stations: reported.length, at: Math.max(...reported.map((s) => s[s.length - 1][0])) } : null
 }
 
 /**
@@ -261,6 +300,17 @@ export function seaAt(weather: Weather, t: number, x: number, z: number): { wind
   return { windSea: component(0), swell: component(1) }
 }
 
+/** Sea level against mean sea level at a world position, tides included, m. */
+export function seaLevelAt(weather: Weather, t: number, x: number, z: number): number {
+  const f = hourIndex(weather, t)
+  const i = Math.floor(f)
+  const j = Math.min(i + 1, weather.times.length - 1)
+  const k = f - i
+  let level = 0
+  for (const [p, w] of gridCorners(x, z)) level += (weather.seaLevel[i][p] * (1 - k) + weather.seaLevel[j][p] * k) * w
+  return level
+}
+
 /**
  * How far buoys pull the modelled wave heights (see correction.ts). Coastal buoys see a sheltered
  * sea the 36 km grid cannot, which is why the reach is short.
@@ -276,7 +326,7 @@ const MIN_MODEL_HS = 0.2
  * log ratios of measured to modelled height. Both components scale alike, so the total
  * significant height scales by the blended ratio; periods stay the model's.
  */
-function correctSea(sea: Float32Array[], times: number[], buoys: Buoy[]) {
+function correctSea(sea: Float32Array[], times: number[], buoys: Buoy[]): Observed | null {
   const totalHs = (frame: Float32Array, corners: [number, number][]) => {
     let wind = 0
     let swell = 0
@@ -308,6 +358,91 @@ function correctSea(sea: Float32Array[], times: number[], buoys: Buoy[]) {
       for (let c = 0; c < SEA_COMPONENTS.length; c++) sea[h][p * SEA_STRIDE + c * 4] *= scale
     })
   })
+  return observed(buoys.map((b) => b.waves))
+}
+
+/**
+ * How far tide gauges pull the modelled sea level. The tide changes slowly along the coast, but
+ * gauges stand in harbours and river mouths the 8 km model does not resolve.
+ */
+const TIDE_REACH: Reach = { km: 30, s: 6 * 3600, modelWeight: 0.1 }
+/** A gauge needs this many hours beside the model to find its datum against mean sea level. */
+const MIN_TIDE_HOURS = 24
+
+/**
+ * Shifts the modelled sea level toward the tide gauges, in place. Each gauge measures against its
+ * own datum, not mean sea level, so its mean offset from the model over the hours both cover is
+ * taken out first; what pulls is the rest: the timing and range of the tide where the model gets
+ * them wrong, and surges it misses.
+ */
+function correctSeaLevel(seaLevel: Float32Array[], times: number[], gauges: TideGauge[]): Observed | null {
+  const sites: Site[] = []
+  const used: Series[] = []
+  for (const gauge of gauges) {
+    const [x, z] = lonLatToWorld(gauge.lon, gauge.lat)
+    const corners = gridCorners(x, z)
+    const pairs = gauge.levels.flatMap(([t, measured]) => {
+      const h = hourAt(times, t)
+      if (h === null) return []
+      let modelled = 0
+      for (const [p, w] of corners) modelled += seaLevel[h][p] * w
+      return [[t, measured - modelled] as [number, number]]
+    })
+    if (pairs.length < MIN_TIDE_HOURS) continue
+    const offset = pairs.reduce((sum, [, d]) => sum + d, 0) / pairs.length
+    sites.push({ x, z, residuals: pairs.map(([t, d]) => [t, d - offset]) })
+    used.push(gauge.levels)
+  }
+  times.forEach((t, h) => {
+    const pulls = pullsAt(sites, t, TIDE_REACH)
+    if (pulls.length === 0) return
+    GRID_XZ.forEach(([px, pz], p) => {
+      seaLevel[h][p] += blend(pulls, px, pz, TIDE_REACH)
+    })
+  })
+  return observed(used)
+}
+
+/**
+ * How far buoys pull the farms' wind: the nearest stand 7 to 45 km from the farms. A buoy's
+ * anemometer rides a few metres above breaking seas, so the model keeps more weight than against
+ * the wave heights: about a quarter at a buoy, half at 45 km, almost all beyond 80 km.
+ */
+const WIND_REACH: Reach = { km: 40, s: 6 * 3600, modelWeight: 0.3 }
+/**
+ * CWA does not publish its anemometer heights; on its 2.5 to 3 m discus buoys they stand about
+ * 3.5 m above the sea, and the neutral log profile over open sea (roughness 0.2 mm) takes the
+ * wind there to 10 m by this factor.
+ */
+const ANEMOMETER_TO_10M = 1.1
+/** Below this modelled wind, m/s, a ratio is mostly noise. */
+const MIN_MODEL_WIND = 2
+
+/**
+ * Scales the farms' hub-height wind toward the buoys', in place. Each buoy's measurement, taken to
+ * 10 m, gives a ratio to the model's 10 m wind at the buoy; the farms take the blended ratio at
+ * their hub height too, as the model's profile between 10 and 100 m stands.
+ */
+function correctWind(windByFarm: Float32Array[], times: number[], buoys: { buoy: Buoy; modelled: number[] }[]): Observed | null {
+  const sites: Site[] = buoys.flatMap(({ buoy, modelled }) => {
+    const [x, z] = lonLatToWorld(buoy.lon, buoy.lat)
+    const residuals = buoy.wind.flatMap(([t, measured]) => {
+      const h = hourAt(times, t)
+      if (h === null || modelled[h] < MIN_MODEL_WIND) return []
+      const ratio = Math.min(Math.max((measured * ANEMOMETER_TO_10M) / modelled[h], 1 / MAX_RATIO), MAX_RATIO)
+      return [[t, Math.log(ratio)] as [number, number]]
+    })
+    return residuals.length ? [{ x, z, residuals }] : []
+  })
+  const farms = WIND_FARMS.map((f) => lonLatToWorld(f.lon, f.lat))
+  times.forEach((t, h) => {
+    const pulls = pullsAt(sites, t, WIND_REACH)
+    if (pulls.length === 0) return
+    farms.forEach(([fx, fz], f) => {
+      windByFarm[f][h * 2] *= Math.exp(blend(pulls, fx, fz, WIND_REACH))
+    })
+  })
+  return sites.length ? observed(buoys.filter(({ buoy }) => buoy.wind.length).map(({ buoy }) => buoy.wind)) : null
 }
 
 /** The index of an hour in the series, or null when it is not one of them. */

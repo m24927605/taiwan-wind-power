@@ -1,5 +1,6 @@
 import { WIND_FARMS } from '../data/windfarms'
-import { hourIndex, type Weather } from '../data/weather'
+import { hourIndex, seaLevelAt, type Observed, type Weather } from '../data/weather'
+import { lonLatToWorld } from '../geo/domain'
 import { farmDynamics, totalOutputMW } from '../scene/turbine/dynamics'
 import { useT } from '../i18n'
 import { useStore } from '../state'
@@ -7,6 +8,13 @@ import { compass8, formatDay, formatNumber, formatTime, useTicker } from './form
 
 const CAPACITY_MW = WIND_FARMS.reduce((sum, f) => sum + f.turbines * f.ratedMW, 0)
 const TURBINE_COUNT = WIND_FARMS.reduce((sum, f) => sum + f.turbines, 0)
+/** Where the tide is read: the middle of the farms, weighted by their turbines. */
+const FARMS_XZ = lonLatToWorld(
+  WIND_FARMS.reduce((sum, f) => sum + f.lon * f.turbines, 0) / TURBINE_COUNT,
+  WIND_FARMS.reduce((sum, f) => sum + f.lat * f.turbines, 0) / TURBINE_COUNT,
+)
+/** Below this rate, m/h, the tide is turning. */
+const SLACK_M_PER_H = 0.1
 
 export function Title() {
   const live = useStore((s) => s.live)
@@ -25,6 +33,12 @@ export function Title() {
       </p>
     </header>
   )
+}
+
+/** Sea level at the farms, m, and how fast it changes, m/h. */
+function tideAtFarms(weather: Weather, time: number): { level: number; rate: number } {
+  const at = (t: number) => seaLevelAt(weather, t, FARMS_XZ[0], FARMS_XZ[1])
+  return { level: at(time), rate: (at(time + 900) - at(time - 900)) * 2 }
 }
 
 function peakCurrent(): number {
@@ -56,6 +70,7 @@ export function Metrics() {
   const meanWind = windSum / TURBINE_COUNT
   const windFrom = ((Math.atan2(vx, vy) * 180) / Math.PI + 360) % 360
   const factor = output / CAPACITY_MW
+  const tide = tideAtFarms(weather, useStore.getState().time)
 
   return (
     <aside className="metrics glass">
@@ -89,6 +104,17 @@ export function Metrics() {
             <small>m/s</small>
           </dd>
         </div>
+        <div>
+          <dt>{t.tide}</dt>
+          <dd className="is-tide">
+            {tide.level >= 0 ? '+' : '−'}
+            {Math.abs(tide.level).toFixed(2)}
+            <small>m</small>
+          </dd>
+          <dd className="metrics__note">
+            {Math.abs(tide.rate) < SLACK_M_PER_H ? t.tideSlack : tide.rate > 0 ? `↑ ${t.tideRising}` : `↓ ${t.tideFalling}`}
+          </dd>
+        </div>
       </dl>
       <Sources weather={weather} />
     </aside>
@@ -108,18 +134,24 @@ function Sources({ weather }: { weather: Weather }) {
   const age = (at: number) => t.staleFor(Math.floor((now - at) / 3600))
   const snapshot = weather.source === 'snapshot'
   const modelStale = !snapshot && now - weather.fetchedAt > MODEL_STALE_S
-  const { waves } = weather.observed
-  const wavesStale = waves !== null && now - waves.at > OBSERVED_STALE_S
+  const measured = (label: string, o: Observed | null) => {
+    const stale = o !== null && now - o.at > OBSERVED_STALE_S
+    return (
+      <li className={o === null || stale ? 'is-stale' : ''}>
+        <span>{label}</span>
+        {o === null ? t.notMeasured : `${t.stations(o.stations)} · ${when(o.at)}${stale ? ` ${age(o.at)}` : ''}`}
+      </li>
+    )
+  }
   return (
     <ul className="metrics__sources">
       <li className={modelStale ? 'is-stale' : ''}>
         <span>{t.sourceModel}</span>
         Open-Meteo · {when(weather.fetchedAt)} {snapshot ? t.snapshotTag : modelStale ? age(weather.fetchedAt) : t.updated}
       </li>
-      <li className={waves === null || wavesStale ? 'is-stale' : ''}>
-        <span>{t.sourceWaves}</span>
-        {waves === null ? t.notMeasured : `${t.stations(waves.stations)} · ${when(waves.at)}${wavesStale ? ` ${age(waves.at)}` : ''}`}
-      </li>
+      {measured(t.sourceWaves, weather.observed.waves)}
+      {measured(t.sourceWind, weather.observed.wind)}
+      {measured(t.sourceTide, weather.observed.tide)}
     </ul>
   )
 }

@@ -2,7 +2,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import type { Elevation } from '../../data/elevation'
-import { seaAt, type SeaComponent } from '../../data/weather'
+import { seaAt, seaLevelAt, type SeaComponent } from '../../data/weather'
 import { WORLD } from '../../geo/domain'
 import { useStore } from '../../state'
 import { ATMOSPHERE_GLSL, atmosphere } from '../atmosphere'
@@ -56,6 +56,8 @@ function oceanGeometry(): THREE.BufferGeometry {
 const SEABED_GLSL = /* glsl */ `
   uniform sampler2D uElevation;
   uniform vec4 uDomain;
+  // Sea level against mean sea level, tides included, m.
+  uniform float uSeaLevel;
   // Seabed elevation in metres (x) and how far inside the data domain we are (y, 0..1).
   vec2 seabed(vec2 xz) {
     vec2 uv = (xz - uDomain.xy) / uDomain.zw;
@@ -86,6 +88,7 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
       uFoamThreshold: { value: 0.5 },
       uMicroVariance: { value: 0.004 },
       uHs: { value: 1 },
+      uSeaLevel: { value: 0 },
     },
     vertexShader: /* glsl */ `
       ${SEABED_GLSL}
@@ -106,10 +109,11 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
         vec3 d = textureLod(uDisp0, xz * uTileScale.x, lod.x).xyz + textureLod(uDisp1, xz * uTileScale.y, lod.y).xyz
           + textureLod(uDisp2, xz * uTileScale.z, lod.z).xyz;
         // Waves lie down in the shallows, so they never climb the coast.
-        d *= smoothstep(1.0, 20.0, -seabed(xz).x);
+        d *= smoothstep(1.0, 20.0, uSeaLevel - seabed(xz).x);
         vHeight = d.y;
         d *= ${WAVE_SCALE.toFixed(5)};
-        vec3 w = vec3(xz.x + d.x, d.y, xz.y + d.z);
+        // The tide raises and lowers the whole surface; land stands above its range (see Terrain).
+        vec3 w = vec3(xz.x + d.x, d.y + uSeaLevel * 0.001, xz.y + d.z);
         vWorld = w;
         vXZ = xz;
         gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
@@ -163,7 +167,7 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
         float dist = length(toCam);
         vec3 V = toCam / dist;
         vec2 bed = seabed(vXZ);
-        float depth = -bed.x;
+        float depth = uSeaLevel - bed.x;
         float footprint = length(fwidth(vXZ));
 
         // Filtered wave slopes. Mip averaging flattens the mean slope with distance while the
@@ -254,7 +258,9 @@ export function Ocean({ elevation, waveResolution }: { elevation: Elevation; wav
     if (!waves || !material) return
     const { weather, time } = useStore.getState()
     let sea = DEFAULT_SEA
+    let level = 0
     if (weather) {
+      level = seaLevelAt(weather, time, camera.position.x, camera.position.z)
       // The sea where the eye is: one wave field covers the view, and up close the local sea counts.
       const { windSea, swell } = seaAt(weather, time, camera.position.x, camera.position.z)
       // Quantised so the spectrum normalisation only reruns when the forecast actually moves.
@@ -277,6 +283,7 @@ export function Ocean({ elevation, waveResolution }: { elevation: Elevation; wav
     u.uSurf1.value = waves.surface[1]
     u.uSurf2.value = waves.surface[2]
     u.uHs.value = Math.hypot(sea.windSea.hs, sea.swell.hs)
+    u.uSeaLevel.value = level
     u.uFoamThreshold.value = THREE.MathUtils.lerp(0.3, 1.0, whitecaps)
     u.uMicroVariance.value = 0.002 + 0.0012 * u10
     // The grid follows the eye in whole metres so its vertices do not swim through the waves.
