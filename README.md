@@ -26,6 +26,7 @@ Narration by Gemini TTS.
 npm install
 npm run dev            # http://localhost:5199
 npm run build
+npm test               # unit tests (Vitest); CI runs them before every deploy
 ```
 
 Every push to `main` builds the app and publishes it to the `gh-pages` branch under `app/`

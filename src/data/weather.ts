@@ -78,7 +78,7 @@ export async function fetchWeather(): Promise<Weather> {
   }
 }
 
-function parseWeather({ at, marine, wind, buoys }: WeatherPayload, source: Weather['source']): Weather {
+export function parseWeather({ at, marine, wind, buoys }: WeatherPayload, source: Weather['source']): Weather {
   const times = marine[0].hourly.time
   const currents = times.map((_, h) => {
     const frame = new Float32Array(marine.length * 2)

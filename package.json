@@ -9,7 +9,8 @@
     "build:artifact": "tsc -b && vite build --mode artifact --outDir dist-artifact && node scripts/build-artifact.ts",
     "snapshot:weather": "node scripts/snapshot-weather.ts",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
@@ -37,6 +38,7 @@
     "sharp": "^0.35.5",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
+    "vitest": "^4.1.12",
     "wrangler": "4.149.0"
   }
 }

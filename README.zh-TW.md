@@ -24,6 +24,7 @@
 npm install
 npm run dev            # http://localhost:5199
 npm run build
+npm test               # 單元測試（Vitest）；CI 每次部署前都會執行
 ```
 
 每次推送到 `main` 都會自動建置，並發佈到 `gh-pages` 分支的 `app/` 資料夾（`.github/workflows/pages.yml`）；
