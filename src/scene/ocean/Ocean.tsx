@@ -7,7 +7,7 @@ import { WORLD } from '../../geo/domain'
 import { useStore } from '../../state'
 import { ATMOSPHERE_GLSL, atmosphere } from '../atmosphere'
 import { CLOUDS_GLSL, clouds } from '../clouds'
-import { farmDynamics } from '../turbine/dynamics'
+import { windNear } from '../turbine/dynamics'
 import { CASCADES, WaveSimulation, type SeaState } from './WaveSimulation'
 
 /** Until the forecast arrives: a moderate north-east monsoon sea over a long swell. */
@@ -255,7 +255,8 @@ export function Ocean({ elevation, waveResolution }: { elevation: Elevation; wav
     const { weather, time } = useStore.getState()
     let sea = DEFAULT_SEA
     if (weather) {
-      const { windSea, swell } = seaAt(weather, time)
+      // The sea where the eye is: one wave field covers the view, and up close the local sea counts.
+      const { windSea, swell } = seaAt(weather, time, camera.position.x, camera.position.z)
       // Quantised so the spectrum normalisation only reruns when the forecast actually moves.
       const component = (c: SeaComponent) => ({
         hs: Math.round(c.hs * 50) / 50,
@@ -266,9 +267,7 @@ export function Ocean({ elevation, waveResolution }: { elevation: Elevation; wav
     }
     waves.setSeaState(sea)
 
-    let wind = 0
-    for (const w of farmDynamics.wind) wind += w
-    const u10 = (wind / farmDynamics.wind.length) * HUB_TO_10M
+    const u10 = windNear(camera.position.x, camera.position.z) * HUB_TO_10M
     // Whitecaps start around 4 m/s and spread steeply with wind (Monahan); micro-roughness follows Cox–Munk.
     const whitecaps = THREE.MathUtils.smoothstep(u10, 3, 20)
     waves.update(gl, atmosphere.uTime.value, Math.min(dt, 0.1), whitecaps)

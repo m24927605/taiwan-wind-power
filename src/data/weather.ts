@@ -1,4 +1,4 @@
-import { DOMAIN } from '../geo/domain'
+import { DOMAIN, worldToDomainUv } from '../geo/domain'
 import { WIND_FARMS } from './windfarms'
 
 // Live hourly ocean currents and sea state (Open-Meteo Marine) on a grid over the domain, and
@@ -15,10 +15,10 @@ export interface Weather {
   /** Per hour: eastward/northward current in m/s, interleaved, row 0 at the north edge. */
   currents: Float32Array[]
   /**
-   * Strait sea state per hour, as two spectral components: [height m, mean period s,
-   * direction-from degrees] of the wind sea, then the same for the swell.
+   * Per hour, on the current grid: the sea state as two spectral components, each [height m,
+   * mean period s, sine and cosine of the direction it comes from], the wind sea then the swell.
    */
-  sea: Float32Array
+  sea: Float32Array[]
   /** Per farm: [speed m/s, direction-from degrees] per hour, interleaved. */
   wind: Float32Array[]
   /** When the data was retrieved from Open-Meteo, unix seconds. */
@@ -26,9 +26,6 @@ export interface Weather {
   /** Fetched just now, or read from the bundled snapshot. */
   source: 'live' | 'snapshot'
 }
-
-// Sea state is taken as the median over grid points inside the strait, where the farms are.
-const STRAIT = { west: 119.2, east: 120.6, south: 22.6, north: 25.2 }
 
 const LIVE_RANGE = 'past_days=1&forecast_days=3&timeformat=unixtime'
 /** A snapshot has to last until the next deploy, so it reaches as far ahead as the marine model. */
@@ -78,6 +75,8 @@ async function getJson<T>(url: string): Promise<{ at: number; body: T }> {
 }
 
 const SEA_COMPONENTS = ['wind_wave', 'swell_wave'] as const
+/** Values per grid point in a sea-state frame: four per component. */
+const SEA_STRIDE = SEA_COMPONENTS.length * 4
 type MarineVariable =
   | 'ocean_current_velocity'
   | 'ocean_current_direction'
@@ -120,7 +119,6 @@ export async function fetchWeather(): Promise<Weather> {
 }
 
 function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']): Weather {
-  const { lats, lons } = gridCoordinates()
   const times = marine[0].hourly.time
   const currents = times.map((_, h) => {
     const frame = new Float32Array(marine.length * 2)
@@ -136,32 +134,25 @@ function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']
       frame[i * 2 + 1] = speed * Math.cos(dir)
       known[i] = 1
     })
-    fillUnknown(frame, known)
+    fillUnknown(frame, known, 2)
     return frame
   })
 
-  const strait = marine.filter((_, i) => {
-    const lat = lats[i]
-    const lon = lons[i]
-    return lon >= STRAIT.west && lon <= STRAIT.east && lat >= STRAIT.south && lat <= STRAIT.north
-  })
-  const median = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)]
-  const sea = new Float32Array(times.length * 6)
-  times.forEach((_, h) => {
-    SEA_COMPONENTS.forEach((c, k) => {
-      const height = (p: (typeof strait)[number]) => p.hourly[`${c}_height`][h]
-      const period = (p: (typeof strait)[number]) => p.hourly[`${c}_period`][h]
-      const direction = (p: (typeof strait)[number]) => ((p.hourly[`${c}_direction`][h] ?? 0) * Math.PI) / 180
-      const valid = strait.filter((p) => height(p) !== null && period(p) !== null)
-      if (valid.length === 0) return
-      const o = h * 6 + k * 3
-      sea[o] = median(valid.map((p) => height(p)!))
-      sea[o + 1] = median(valid.map((p) => period(p)!))
-      // Average directions as unit vectors so they wrap through north.
-      const x = valid.reduce((acc, p) => acc + Math.sin(direction(p)), 0)
-      const y = valid.reduce((acc, p) => acc + Math.cos(direction(p)), 0)
-      sea[o + 2] = (Math.atan2(x, y) * 180) / Math.PI
+  const sea = times.map((_, h) => {
+    const frame = new Float32Array(marine.length * SEA_STRIDE)
+    const known = new Uint8Array(marine.length)
+    marine.forEach((point, i) => {
+      const values = SEA_COMPONENTS.map((c) => [point.hourly[`${c}_height`][h], point.hourly[`${c}_period`][h], point.hourly[`${c}_direction`][h]])
+      if (values.some((v) => v.includes(null))) return
+      values.forEach(([height, period, direction], k) => {
+        const o = i * SEA_STRIDE + k * 4
+        const from = (direction! * Math.PI) / 180
+        frame.set([height!, period!, Math.sin(from), Math.cos(from)], o)
+      })
+      known[i] = 1
     })
+    fillUnknown(frame, known, SEA_STRIDE)
+    return frame
   })
 
   const windByFarm = wind.map((farm) => {
@@ -181,9 +172,10 @@ function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']
 /**
  * Grid points the marine model leaves empty (on land and against the coast) take the mean of
  * their known neighbours, ring by ring, so sampling between grid points never blends real
- * currents toward a still sea that is only missing data. Land itself is masked by elevation.
+ * currents or waves toward a still sea that is only missing data. Land itself is masked by
+ * elevation. Each point holds `stride` values.
  */
-function fillUnknown(frame: Float32Array, known: Uint8Array) {
+function fillUnknown(frame: Float32Array, known: Uint8Array, stride: number) {
   const { cols, rows } = CURRENT_GRID
   for (let ring = known.slice(); ring.includes(0); ) {
     const next = ring.slice()
@@ -191,22 +183,19 @@ function fillUnknown(frame: Float32Array, known: Uint8Array) {
       if (ring[i]) continue
       const r = Math.floor(i / cols)
       const c = i % cols
-      let x = 0
-      let y = 0
+      const sum = new Float32Array(stride)
       let n = 0
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           const rr = r + dr
           const cc = c + dc
           if (rr < 0 || rr >= rows || cc < 0 || cc >= cols || !ring[rr * cols + cc]) continue
-          x += frame[(rr * cols + cc) * 2]
-          y += frame[(rr * cols + cc) * 2 + 1]
+          for (let k = 0; k < stride; k++) sum[k] += frame[(rr * cols + cc) * stride + k]
           n++
         }
       }
       if (n === 0) continue
-      frame[i * 2] = x / n
-      frame[i * 2 + 1] = y / n
+      for (let k = 0; k < stride; k++) frame[i * stride + k] = sum[k] / n
       next[i] = 1
     }
     // A frame with no known point at all stays still.
@@ -251,20 +240,39 @@ export interface SeaComponent {
   fromRad: number
 }
 
-/** Interpolated strait sea state: the wind sea and the swell. */
-export function seaAt(weather: Weather, t: number): { windSea: SeaComponent; swell: SeaComponent } {
+/**
+ * Sea state at a world position: the wind sea and the swell, interpolated across the grid and
+ * between hours. Outside the domain the nearest edge stands.
+ */
+export function seaAt(weather: Weather, t: number, x: number, z: number): { windSea: SeaComponent; swell: SeaComponent } {
   const f = hourIndex(weather, t)
   const i = Math.floor(f)
   const j = Math.min(i + 1, weather.times.length - 1)
   const k = f - i
-  const s = weather.sea
-  const component = (c: number): SeaComponent => {
-    const lerp = (o: number) => s[i * 6 + c * 3 + o] + (s[j * 6 + c * 3 + o] - s[i * 6 + c * 3 + o]) * k
-    const a = (s[i * 6 + c * 3 + 2] * Math.PI) / 180
-    const b = (s[j * 6 + c * 3 + 2] * Math.PI) / 180
-    const x = Math.sin(a) * (1 - k) + Math.sin(b) * k
-    const y = Math.cos(a) * (1 - k) + Math.cos(b) * k
-    return { hs: lerp(0), tm: lerp(1), fromRad: Math.atan2(x, y) }
+  const { cols, rows } = CURRENT_GRID
+  const [u, v] = worldToDomainUv(x, z)
+  const gx = Math.min(Math.max(u, 0), 1) * (cols - 1)
+  const gy = Math.min(Math.max(v, 0), 1) * (rows - 1)
+  const c0 = Math.min(Math.floor(gx), cols - 2)
+  const r0 = Math.min(Math.floor(gy), rows - 2)
+  const fx = gx - c0
+  const fy = gy - r0
+  const corners: [number, number][] = [
+    [r0 * cols + c0, (1 - fx) * (1 - fy)],
+    [r0 * cols + c0 + 1, fx * (1 - fy)],
+    [(r0 + 1) * cols + c0, (1 - fx) * fy],
+    [(r0 + 1) * cols + c0 + 1, fx * fy],
+  ]
+  const value = (o: number) => {
+    let acc = 0
+    for (const [p, w] of corners) acc += (weather.sea[i][p * SEA_STRIDE + o] * (1 - k) + weather.sea[j][p * SEA_STRIDE + o] * k) * w
+    return acc
   }
+  const component = (c: number): SeaComponent => ({
+    hs: value(c * 4),
+    tm: value(c * 4 + 1),
+    // Directions blend as unit vectors so they wrap through north.
+    fromRad: Math.atan2(value(c * 4 + 2), value(c * 4 + 3)),
+  })
   return { windSea: component(0), swell: component(1) }
 }

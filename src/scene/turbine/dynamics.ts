@@ -1,5 +1,6 @@
 import { WIND_FARMS } from '../../data/windfarms'
 import { windAt, type Weather } from '../../data/weather'
+import { lonLatToWorld } from '../../geo/domain'
 import { TURBINE, powerAt, rpmAt } from './spec'
 
 const n = WIND_FARMS.length
@@ -72,6 +73,23 @@ export function advanceFarms(weather: Weather, time: number, dt: number) {
     farmDynamics.power[f] = powerAt(speed) * (WIND_FARMS[f].ratedMW / TURBINE.ratedPowerMW)
   }
   farmDynamics.initialised = true
+}
+
+const farmXZ = WIND_FARMS.map((f) => lonLatToWorld(f.lon, f.lat))
+
+/**
+ * Hub-height wind at a world position, m/s: the farms' winds weighted by inverse squared
+ * distance, so among a farm it is that farm's wind and between farms it blends.
+ */
+export function windNear(x: number, z: number): number {
+  let sum = 0
+  let weight = 0
+  for (let f = 0; f < n; f++) {
+    const w = 1 / ((x - farmXZ[f][0]) ** 2 + (z - farmXZ[f][1]) ** 2 + 1)
+    sum += farmDynamics.wind[f] * w
+    weight += w
+  }
+  return sum / weight
 }
 
 export function totalOutputMW(): number {

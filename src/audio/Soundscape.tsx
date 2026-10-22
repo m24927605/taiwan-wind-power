@@ -38,7 +38,7 @@ export function Soundscape() {
     scratch.to.set(turbine.x - p.x, TURBINE.hubHeight * turbineScale(turbine.farm) - p.y, turbine.z - p.z).normalize()
     let waveHeight = 1
     if (weather) {
-      const { windSea, swell } = seaAt(weather, time)
+      const { windSea, swell } = seaAt(weather, time, p.x, p.z)
       waveHeight = Math.hypot(windSea.hs, swell.hs)
     }
     updateSound(
