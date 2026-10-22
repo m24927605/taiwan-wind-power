@@ -6,6 +6,7 @@
   "observability": { "enabled": true },
   // The last good Open-Meteo response and buoy observations, which every request is served from.
   "kv_namespaces": [{ "binding": "WEATHER", "id": "4f3cc520b13c436c982cc82c3fa48f35" }],
-  // The model hourly (Open-Meteo updates hourly), the buoys every ten minutes (CWA, four times an hour).
-  "triggers": { "crons": ["5 * * * *", "*/10 * * * *"] }
+  // The buoys every ten minutes (CWA updates four times an hour); the first run each hour also
+  // refreshes the model (Open-Meteo updates hourly) and the station list.
+  "triggers": { "crons": ["*/10 * * * *"] }
 }

@@ -17,8 +17,6 @@ interface Env {
   WEATHER: KVNamespace
 }
 
-/** Must match the hourly cron in wrangler.jsonc; the other one refreshes the buoys. */
-const HOURLY_CRON = '5 * * * *'
 /** The model's JSON object without its closing brace, so the buoys can follow as one more field. */
 const MODEL_KEY = 'model-head'
 const STATIONS_KEY = 'stations'
@@ -59,11 +57,11 @@ async function refreshBuoys(env: Env): Promise<string> {
 
 export default {
   async scheduled(controller, env, ctx) {
-    if (controller.cron === HOURLY_CRON) {
+    ctx.waitUntil(refreshBuoys(env))
+    // The run in the first ten minutes of each hour also refreshes the hourly data.
+    if (new Date(controller.scheduledTime).getUTCMinutes() < 10) {
       ctx.waitUntil(refreshModel(env))
       ctx.waitUntil(refreshStations(env))
-    } else {
-      ctx.waitUntil(refreshBuoys(env))
     }
   },
 
