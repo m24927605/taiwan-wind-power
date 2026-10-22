@@ -29,9 +29,10 @@ npm run build
 每次推送到 `main` 都會自動建置，並發佈到 `gh-pages` 分支的 `app/` 資料夾（`.github/workflows/pages.yml`）；
 影片頁位於該分支的根目錄。
 
-氣象資料經由一個小型 Cloudflare Worker（`worker/`）取得：它替所有訪客統一抓取 Open-Meteo 與氣象署浮標資料，
-並快取 30 分鐘；氣象署授權碼只存在那裡。應用程式從 `VITE_WEATHER_SERVICE`（`.env.production`）讀取它的網址；
-未設定或連不上時，應用程式會自己抓取 Open-Meteo，並顯示未經校正的模式值。
+氣象資料經由一個小型 Cloudflare Worker（`worker/`）取得：它依排程每小時抓取 Open-Meteo、每 10 分鐘抓取氣象署
+浮標資料並存進 KV，所有訪客讀的都是這份存好的資料，所以對外請求次數固定、與流量無關，抓取失敗時也會保留上一份
+好資料；氣象署授權碼只存在那裡。頁面開著時，應用程式每 10 分鐘重新讀取一次。應用程式從 `VITE_WEATHER_SERVICE`
+（`.env.production`）讀取 Worker 的網址；未設定或連不上時，應用程式會自己抓取 Open-Meteo，並顯示未經校正的模式值。
 
 ```bash
 npx wrangler secret put CWA_API_KEY --config worker/wrangler.jsonc   # 只需一次；氣象署開放資料授權碼
@@ -99,7 +100,7 @@ src/
     turbine/          GLB 存取、各風場動態、instanced LOD、剖面主角風機
   ui/               HUD、時間軸、工具列、風機面板、工程模式疊層
   state.ts          zustand store：階段、資料、場景時間、工具、統計
-worker/             氣象服務（Cloudflare Worker）：替所有訪客統一抓取 Open-Meteo 與氣象署浮標
+worker/             氣象服務（Cloudflare Worker）：每小時抓 Open-Meteo、每 10 分鐘抓氣象署浮標，存進 KV
 ```
 
 每一幀的模擬狀態，例如各風場的轉子角度、偏航與風速，存放在一般的型別陣列（`farmDynamics`）中，
@@ -207,10 +208,10 @@ z12 影像，在其範圍邊緣淡入；手機與不支援 8192 貼圖的 GPU �
 **自適應品質。** `PerformanceMonitor` 在畫格耗時過長時以 0.25 為單位降低 DPR，有餘裕時再調回。
 DPR 超過 1.5 倍時停用 composer 中的 MSAA，因為成本大於效果。觸控裝置一開始就使用較少粒子。
 
-**資料預算。** Open-Meteo 把多點請求中的每個座標都算作一次呼叫，並依 IP 限流（免費方案每分鐘 600 次），
-而每次載入要求 345 個座標。氣象服務每半小時替所有訪客發出一次這個請求，其餘由邊緣快取回應。當應用程式
-必須自己抓取 Open-Meteo 時，回應在 `localStorage` 中快取 30 分鐘，配合逐時更新的頻率，所以重新整理不需
-花費任何呼叫額度。
+**資料預算。** Open-Meteo 把多點請求中的每個座標都算作一次呼叫，並依 IP 限流（免費方案每分鐘 600 次、每天
+10,000 次），而每次載入要求 345 個座標。氣象服務每天替所有訪客發出 24 次這個請求，約 8,300 次呼叫。當應用程式
+必須自己抓取 Open-Meteo 時，回應在 `localStorage` 中快取 30 分鐘，配合逐時更新的頻率，所以重新整理不需花費
+任何呼叫額度。
 
 ### 值得知道的陷阱
 

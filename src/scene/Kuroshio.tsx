@@ -223,6 +223,11 @@ export function Kuroshio({ elevation, weather, size }: { elevation: Elevation; w
     return () => disposeSimulation(next)
   }, [gl, size, elevation])
 
+  // Refreshed weather may hold different currents for the same hour.
+  useEffect(() => {
+    loadedHour.current = -1
+  }, [weather])
+
   useFrame(({ camera }, rawDt) => {
     if (!sim) return
     sim.mesh.visible = camera.position.y > TRACER_LOW_KM

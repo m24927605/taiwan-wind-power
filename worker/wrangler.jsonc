@@ -4,6 +4,8 @@
   "main": "index.ts",
   "compatibility_date": "2026-10-01",
   "observability": { "enabled": true },
-  // Lets the cache key change with every deployment (see index.ts).
-  "version_metadata": { "binding": "CF_VERSION_METADATA" }
+  // The last good Open-Meteo response and buoy observations, which every request is served from.
+  "kv_namespaces": [{ "binding": "WEATHER", "id": "4f3cc520b13c436c982cc82c3fa48f35" }],
+  // The model hourly (Open-Meteo updates hourly), the buoys every ten minutes (CWA, four times an hour).
+  "triggers": { "crons": ["5 * * * *", "*/10 * * * *"] }
 }

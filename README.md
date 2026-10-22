@@ -31,10 +31,12 @@ npm run build
 Every push to `main` builds the app and publishes it to the `gh-pages` branch under `app/`
 (`.github/workflows/pages.yml`); the film page sits at the root of that branch.
 
-The weather comes through a small Cloudflare Worker (`worker/`) that fetches Open-Meteo and the
-CWA buoys once for every visitor and caches them for 30 minutes; the CWA key lives only there. The
-app reads its origin from `VITE_WEATHER_SERVICE` (`.env.production`); without it, or when it is
-out of reach, the app fetches Open-Meteo itself and shows the model uncorrected.
+The weather comes through a small Cloudflare Worker (`worker/`). On a schedule it fetches
+Open-Meteo every hour and the CWA buoys every ten minutes into KV, and every visitor is served
+that stored copy, so upstream calls stay fixed whatever the traffic and a failed fetch leaves the
+last good copy in place; the CWA key lives only there. The app refreshes every ten minutes while
+open. It reads the Worker's origin from `VITE_WEATHER_SERVICE` (`.env.production`); without it, or
+when it is out of reach, the app fetches Open-Meteo itself and shows the model uncorrected.
 
 ```bash
 npx wrangler secret put CWA_API_KEY --config worker/wrangler.jsonc   # once; a CWA open data key
@@ -111,7 +113,7 @@ src/
     turbine/          GLB access, per-farm dynamics, instanced LOD, cutaway hero
   ui/               HUD, timeline, toolbar, turbine panel, engineering overlay
   state.ts          zustand store: stage, data, scene time, tools, stats
-worker/             weather service (Cloudflare Worker): Open-Meteo and CWA buoys once for every visitor
+worker/             weather service (Cloudflare Worker): Open-Meteo hourly and CWA buoys every 10 minutes, stored in KV
 ```
 
 Per-frame simulation state, such as rotor angle, yaw and wind per farm, lives in plain typed
@@ -264,10 +266,10 @@ long, and back up when there is headroom. MSAA in the composer is disabled above
 it costs more than it shows. Touch devices start with fewer particles.
 
 **Data budget.** Open-Meteo counts every coordinate of a multi-point request as one call, against
-a per-IP limit (600 a minute on the free tier), and one load asks for 345 coordinates. The weather
-service makes that request once per half hour for every visitor, from the edge cache. When the
-app has to fetch Open-Meteo itself, the response is kept in `localStorage` for 30 minutes,
-matching the hourly update cadence, so reloads cost nothing.
+a per-IP limit (600 a minute and 10,000 a day on the free tier), and one load asks for 345
+coordinates. The weather service makes that request 24 times a day for every visitor, about 8,300
+calls. When the app has to fetch Open-Meteo itself, the response is kept in `localStorage` for 30
+minutes, matching the hourly update cadence, so reloads cost nothing.
 
 ### Pitfalls worth knowing
 
