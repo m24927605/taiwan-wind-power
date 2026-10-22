@@ -1,5 +1,6 @@
 import { lonLatToWorld, worldToDomainUv } from '../geo/domain'
 import type { Buoy, WeatherPayload } from './cwa'
+import { blend, pullsAt, type Reach, type Site } from './correction'
 import { CURRENT_GRID, MARINE_POINTS, SEA_COMPONENTS, fetchOpenMeteo, getJson, gridCoordinates, type OpenMeteo } from './openMeteo'
 
 // Live hourly ocean currents and sea state on a grid over the domain, and hub-height wind at every
@@ -38,6 +39,11 @@ export interface Observed {
 const SNAPSHOT_URL = 'data/weather-snapshot.json'
 
 const GRID_POINTS = CURRENT_GRID.cols * CURRENT_GRID.rows
+/** World position of every grid point. */
+const GRID_XZ = (() => {
+  const { lats, lons } = gridCoordinates()
+  return lats.map((lat, i) => lonLatToWorld(lons[i], lat))
+})()
 
 /** Values per grid point in a sea-state frame: four per component. */
 const SEA_STRIDE = SEA_COMPONENTS.length * 4
@@ -255,24 +261,20 @@ export function seaAt(weather: Weather, t: number, x: number, z: number): { wind
   return { windSea: component(0), swell: component(1) }
 }
 
-/** A buoy pulls the modelled wave height toward what it measures over about this distance, km, */
-const BUOY_REACH_KM = 30
-/** and about this long either side of a measurement, s. */
-const BUOY_HOLD_S = 6 * 3600
-/** The model's own weight: where the buoys' weights add up to this, half their correction applies. */
-const MODEL_WEIGHT = 0.1
+/**
+ * How far buoys pull the modelled wave heights (see correction.ts). Coastal buoys see a sheltered
+ * sea the 36 km grid cannot, which is why the reach is short.
+ */
+const WAVE_REACH: Reach = { km: 30, s: 6 * 3600, modelWeight: 0.1 }
 /** A buoy scales the model by at most this factor either way. */
 const MAX_RATIO = 2
 /** Below this modelled height, m, a ratio says more about the grid than about the sea. */
 const MIN_MODEL_HS = 0.2
 
 /**
- * Scales the modelled wave heights toward the buoys' measurements, in place. Each measurement
- * gives a ratio to the model at its buoy and hour; every grid point and hour takes a blend of the
- * log ratios, weighted by distance and by time from the measurement, against the model's own
- * weight, so far from the buoys and far into the forecast the model stands. Coastal buoys see a
- * sheltered sea the 36 km grid cannot, which is why their reach is short. Both components scale
- * alike, so the total significant height scales by the blended ratio; periods stay the model's.
+ * Scales the modelled wave heights toward the buoys' measurements, in place, by a blend of the
+ * log ratios of measured to modelled height. Both components scale alike, so the total
+ * significant height scales by the blended ratio; periods stay the model's.
  */
 function correctSea(sea: Float32Array[], times: number[], buoys: Buoy[]) {
   const totalHs = (frame: Float32Array, corners: [number, number][]) => {
@@ -285,40 +287,31 @@ function correctSea(sea: Float32Array[], times: number[], buoys: Buoy[]) {
     return Math.hypot(wind, swell)
   }
   // Ratios first, from the uncorrected model.
-  const sites = buoys.map((buoy) => {
+  const sites: Site[] = buoys.map((buoy) => {
     const [x, z] = lonLatToWorld(buoy.lon, buoy.lat)
     const corners = gridCorners(x, z)
-    const ratios: [t: number, logRatio: number][] = []
+    const residuals: [number, number][] = []
     for (const [t, measured] of buoy.waves) {
-      const h = (t - times[0]) / 3600
-      if (!Number.isInteger(h) || h < 0 || h >= times.length) continue
+      const h = hourAt(times, t)
+      if (h === null) continue
       const modelled = totalHs(sea[h], corners)
       if (modelled < MIN_MODEL_HS) continue
-      ratios.push([t, Math.log(Math.min(Math.max(measured / modelled, 1 / MAX_RATIO), MAX_RATIO))])
+      residuals.push([t, Math.log(Math.min(Math.max(measured / modelled, 1 / MAX_RATIO), MAX_RATIO))])
     }
-    return { x, z, ratios }
+    return { x, z, residuals }
   })
-  const { lats, lons } = gridCoordinates()
-  const points = lats.map((lat, i) => lonLatToWorld(lons[i], lat))
   times.forEach((t, h) => {
-    // Each buoy's measurement nearest this hour, weighted by how far it lies in time.
-    const pulls = sites.flatMap(({ x, z, ratios }) => {
-      if (ratios.length === 0) return []
-      const [tn, logRatio] = ratios.reduce((best, r) => (Math.abs(r[0] - t) < Math.abs(best[0] - t) ? r : best))
-      return [{ x, z, logRatio, weight: Math.exp(-Math.abs(tn - t) / BUOY_HOLD_S) }]
-    })
+    const pulls = pullsAt(sites, t, WAVE_REACH)
     if (pulls.length === 0) return
-    const frame = sea[h]
-    points.forEach(([px, pz], p) => {
-      let sum = 0
-      let weight = 0
-      for (const pull of pulls) {
-        const w = pull.weight * Math.exp(-((px - pull.x) ** 2 + (pz - pull.z) ** 2) / BUOY_REACH_KM ** 2)
-        sum += w * pull.logRatio
-        weight += w
-      }
-      const scale = Math.exp(sum / (weight + MODEL_WEIGHT))
-      for (let c = 0; c < SEA_COMPONENTS.length; c++) frame[p * SEA_STRIDE + c * 4] *= scale
+    GRID_XZ.forEach(([px, pz], p) => {
+      const scale = Math.exp(blend(pulls, px, pz, WAVE_REACH))
+      for (let c = 0; c < SEA_COMPONENTS.length; c++) sea[h][p * SEA_STRIDE + c * 4] *= scale
     })
   })
+}
+
+/** The index of an hour in the series, or null when it is not one of them. */
+function hourAt(times: number[], t: number): number | null {
+  const h = (t - times[0]) / 3600
+  return Number.isInteger(h) && h >= 0 && h < times.length ? h : null
 }
