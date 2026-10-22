@@ -176,6 +176,12 @@ small {
   color: var(--text-faint);
 }
 
+.metrics__measured {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .metrics__grid {
   margin-top: 16px;
   padding-top: 14px;
@@ -641,6 +647,12 @@ small {
 .panel__state i.is-on {
   background: #6dffa8;
   box-shadow: 0 0 10px #6dffa8;
+}
+
+.panel__measured {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-dim);
 }
 
 .panel__stats {

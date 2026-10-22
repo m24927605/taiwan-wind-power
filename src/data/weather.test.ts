@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { lonLatToWorld } from '../geo/domain'
-import type { Buoy, TideGauge, WeatherPayload } from './cwa'
+import type { Buoy, TideGauge } from './cwa'
 import { CURRENT_GRID, MARINE_POINTS } from './openMeteo'
+import type { WeatherPayload } from './payload'
 import { parseWeather, seaAt, seaLevelAt, windAt } from './weather'
 import { WIND_FARMS } from './windfarms'
 
@@ -119,6 +120,18 @@ describe('buoy wind correction', () => {
   })
 })
 
+describe('Taipower output', () => {
+  it('sums the units of each farm and leaves farms it does not list empty', () => {
+    const units = { 芳一風: 22.4, 芳二風: 138.6, 海能風: 360.6, 觀園: 21.1 }
+    const weather = parseWeather({ ...payload(), generation: { at: 5 * HOUR, units } }, 'live')
+    const mw = (id: string) => weather.generation!.mw[WIND_FARMS.findIndex((f) => f.id === id)]
+    expect(mw('changfang')).toBeCloseTo(161)
+    expect(mw('formosa2')).toBeCloseTo(360.6)
+    expect(mw('yunneng')).toBeNull()
+    expect(weather.generation!.at).toBe(5 * HOUR)
+  })
+})
+
 describe('without measurements', () => {
   const plain = parseWeather(payload(), 'live')
 
@@ -129,6 +142,7 @@ describe('without measurements', () => {
     expect(seaLevelAt(plain, 10 * HOUR, bx, bz)).toBeCloseTo(modelTide(10 * HOUR))
     expect(windAt(plain, 0, 10 * HOUR).speed).toBeCloseTo(HUB_WIND)
     expect(plain.observed).toEqual({ waves: null, wind: null, tide: null })
+    expect(plain.generation).toBeNull()
   })
 
   it('fills the points left out of the request from their neighbours', () => {

@@ -7,6 +7,7 @@
   // The last good Open-Meteo response and buoy observations, which every request is served from.
   "kv_namespaces": [{ "binding": "WEATHER", "id": "4f3cc520b13c436c982cc82c3fa48f35" }],
   // Every ten minutes, each run doing one share (see index.ts): the model and the station list in
-  // the first ten minutes of the hour, then the buoys and the tide gauges in turn.
+  // the first ten minutes of the hour, then the buoys and the tide gauges in turn, each with
+  // Taipower's output.
   "triggers": { "crons": ["*/10 * * * *"] }
 }

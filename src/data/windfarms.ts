@@ -16,18 +16,20 @@ export interface WindFarm {
   spacingKm: number
   /** Rotor diameter of the farm's machine, m: the shared turbine model is scaled to it. */
   rotorM: number
+  /** Its units in Taipower's output data (taipower.ts). */
+  taipowerUnits: string[]
 }
 
 export const WIND_FARMS: WindFarm[] = [
-  { id: 'formosa1', name: '海洋竹南', nameEn: 'Formosa 1', lon: 120.81, lat: 24.71, turbines: 22, ratedMW: 5.5, heading: 30, spacingKm: 0.9, rotorM: 154 },
-  { id: 'formosa2', name: '海能', nameEn: 'Formosa 2', lon: 120.66, lat: 24.6, turbines: 47, ratedMW: 8, heading: 30, spacingKm: 1.1, rotorM: 167 },
-  { id: 'tpc1', name: '台電一期', nameEn: 'TPC Phase 1', lon: 120.27, lat: 23.96, turbines: 21, ratedMW: 5.2, heading: 25, spacingKm: 0.9, rotorM: 136 },
-  { id: 'zhongneng', name: '中能', nameEn: 'Zhong Neng', lon: 120.24, lat: 24.04, turbines: 31, ratedMW: 9.5, heading: 25, spacingKm: 1.1, rotorM: 174 },
-  { id: 'changfang', name: '彰芳暨西島', nameEn: 'Changfang & Xidao', lon: 120.16, lat: 24.11, turbines: 62, ratedMW: 9.5, heading: 25, spacingKm: 1.15, rotorM: 174 },
-  { id: 'gc12a', name: '大彰化東南及西南', nameEn: 'Greater Changhua 1 & 2a', lon: 120.05, lat: 24.17, turbines: 111, ratedMW: 8, heading: 25, spacingKm: 1.1, rotorM: 167 },
-  { id: 'gc2b4', name: '大彰化西北', nameEn: 'Greater Changhua 2b & 4', lon: 119.94, lat: 24.27, turbines: 66, ratedMW: 14, heading: 25, spacingKm: 1.4, rotorM: 222 },
-  { id: 'hailong', name: '海龍', nameEn: 'Hai Long 2 & 3', lon: 119.9, lat: 24.0, turbines: 73, ratedMW: 14, heading: 25, spacingKm: 1.4, rotorM: 222 },
-  { id: 'yunneng', name: '允能', nameEn: 'Yunneng', lon: 120.06, lat: 23.79, turbines: 80, ratedMW: 9.5, heading: 20, spacingKm: 1.1, rotorM: 174 },
+  { id: 'formosa1', name: '海洋竹南', nameEn: 'Formosa 1', lon: 120.81, lat: 24.71, turbines: 22, ratedMW: 5.5, heading: 30, spacingKm: 0.9, rotorM: 154, taipowerUnits: ['海洋竹南'] },
+  { id: 'formosa2', name: '海能', nameEn: 'Formosa 2', lon: 120.66, lat: 24.6, turbines: 47, ratedMW: 8, heading: 30, spacingKm: 1.1, rotorM: 167, taipowerUnits: ['海能風'] },
+  { id: 'tpc1', name: '台電一期', nameEn: 'TPC Phase 1', lon: 120.27, lat: 23.96, turbines: 21, ratedMW: 5.2, heading: 25, spacingKm: 0.9, rotorM: 136, taipowerUnits: ['離岸一期'] },
+  { id: 'zhongneng', name: '中能', nameEn: 'Zhong Neng', lon: 120.24, lat: 24.04, turbines: 31, ratedMW: 9.5, heading: 25, spacingKm: 1.1, rotorM: 174, taipowerUnits: ['中能風'] },
+  { id: 'changfang', name: '彰芳暨西島', nameEn: 'Changfang & Xidao', lon: 120.16, lat: 24.11, turbines: 62, ratedMW: 9.5, heading: 25, spacingKm: 1.15, rotorM: 174, taipowerUnits: ['芳一風', '芳二風'] },
+  { id: 'gc12a', name: '大彰化東南及西南', nameEn: 'Greater Changhua 1 & 2a', lon: 120.05, lat: 24.17, turbines: 111, ratedMW: 8, heading: 25, spacingKm: 1.1, rotorM: 167, taipowerUnits: ['沃一風', '沃二風'] },
+  { id: 'gc2b4', name: '大彰化西北', nameEn: 'Greater Changhua 2b & 4', lon: 119.94, lat: 24.27, turbines: 66, ratedMW: 14, heading: 25, spacingKm: 1.4, rotorM: 222, taipowerUnits: ['沃南風', '沃四風'] },
+  { id: 'hailong', name: '海龍', nameEn: 'Hai Long 2 & 3', lon: 119.9, lat: 24.0, turbines: 73, ratedMW: 14, heading: 25, spacingKm: 1.4, rotorM: 222, taipowerUnits: ['龍A風', '龍B風', '龍三風'] },
+  { id: 'yunneng', name: '允能', nameEn: 'Yunneng', lon: 120.06, lat: 23.79, turbines: 80, ratedMW: 8, heading: 20, spacingKm: 1.1, rotorM: 167, taipowerUnits: ['允湖', '允西'] },
 ]
 
 export interface Turbine {

@@ -1,10 +1,10 @@
 // The weather the app shows: Open-Meteo's model fields and the measurements of CWA's buoys (wave
-// height and wind) and tide gauges (sea level), fetched on a schedule and kept in KV, so every
-// visitor is served the same stored copy. Visitors never reach Open-Meteo or CWA themselves, the
-// number of upstream calls is fixed whatever the traffic (24 Open-Meteo requests a day, inside its
-// free daily limit), and the CWA key stays here. A failed fetch leaves the last good copy in
-// place. The app falls back to Open-Meteo directly, then to its bundled snapshot, only when this
-// is out of reach.
+// height and wind) and tide gauges (sea level), with Taipower's output from the wind farms,
+// fetched on a schedule and kept in KV, so every visitor is served the same stored copy. Visitors
+// never reach the sources themselves, the number of upstream calls is fixed whatever the traffic
+// (24 Open-Meteo requests a day, inside its free daily limit), and the CWA key stays here. A
+// failed fetch leaves the last good copy in place. The app falls back to Open-Meteo directly,
+// then to its bundled snapshot, only when this is out of reach.
 //
 // A Worker gets a few milliseconds of CPU per run, and even decoding the 1.7 MB of Open-Meteo JSON
 // to a string uses them up, so the model is stored and served as the bytes Open-Meteo sent: joined,
@@ -12,6 +12,7 @@
 
 import { fetchBuoys, fetchStations, fetchTides, type Buoy, type Stations } from '../src/data/cwa'
 import { openMeteoUrls, windBuoys } from '../src/data/openMeteo'
+import { fetchGeneration } from '../src/data/taipower'
 
 interface Env {
   CWA_API_KEY: string
@@ -23,6 +24,7 @@ const MODEL_KEY = 'model-head'
 const STATIONS_KEY = 'stations'
 const BUOYS_KEY = 'buoys'
 const TIDES_KEY = 'tides'
+const GENERATION_KEY = 'generation'
 /** Browsers may reuse a response this long, s; the app refreshes every ten minutes. */
 const BROWSER_TTL_S = 60
 
@@ -70,35 +72,43 @@ async function refreshTides(env: Env): Promise<string> {
   return tides
 }
 
+async function refreshGeneration(env: Env): Promise<string> {
+  const generation = JSON.stringify(await fetchGeneration())
+  await env.WEATHER.put(GENERATION_KEY, generation)
+  return generation
+}
+
 export default {
   // One run every ten minutes, each doing one share of the work so none outgrows the CPU budget:
   // the hourly data in the first ten minutes of the hour (Open-Meteo updates hourly), then the
-  // buoys and the tide gauges in turn (CWA's measurements arrive hourly, half an hour late).
+  // buoys and the tide gauges in turn (CWA's measurements arrive hourly, half an hour late), each
+  // beside Taipower's output, which changes every ten minutes.
   async scheduled(controller, env, ctx) {
     const slot = Math.floor(new Date(controller.scheduledTime).getUTCMinutes() / 10)
     if (slot === 0) {
       ctx.waitUntil(refreshModel(env))
       ctx.waitUntil(refreshStations(env))
-    } else if (slot % 2 === 1) {
-      ctx.waitUntil(refreshBuoys(env))
-    } else {
-      ctx.waitUntil(refreshTides(env))
+      return
     }
+    ctx.waitUntil(refreshGeneration(env))
+    ctx.waitUntil(slot % 2 === 1 ? refreshBuoys(env) : refreshTides(env))
   },
 
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url)
     if (request.method !== 'GET' || url.pathname !== '/weather') return new Response('Not found', { status: 404, headers: CORS })
 
-    let [model, buoys, tides] = await Promise.all([
+    let [model, buoys, tides, generation] = await Promise.all([
       env.WEATHER.get(MODEL_KEY, 'arrayBuffer'),
       env.WEATHER.get(BUOYS_KEY),
       env.WEATHER.get(TIDES_KEY),
+      env.WEATHER.get(GENERATION_KEY),
     ])
     // Until the schedule has filled the store (a new namespace), fetch here once, the buoys first
     // so the model knows where they measure wind.
     if (buoys === null) buoys = await refreshBuoys(env).catch(() => null)
     if (tides === null) tides = await refreshTides(env).catch(() => null)
+    if (generation === null) generation = await refreshGeneration(env).catch(() => null)
     if (model === null) {
       try {
         model = await refreshModel(env)
@@ -109,6 +119,7 @@ export default {
     const parts: (ArrayBuffer | string)[] = [model]
     if (buoys !== null) parts.push(',"buoys":', buoys)
     if (tides !== null) parts.push(',"tides":', tides)
+    if (generation !== null) parts.push(',"generation":', generation)
     parts.push('}')
     const body = new Blob(parts)
     return new Response(body, {

@@ -1,5 +1,5 @@
 import { WIND_FARMS } from '../data/windfarms'
-import { hourIndex, seaLevelAt, type Observed, type Weather } from '../data/weather'
+import { generationAt, hourIndex, seaLevelAt, type Observed, type Weather } from '../data/weather'
 import { lonLatToWorld } from '../geo/domain'
 import { farmDynamics, totalOutputMW } from '../scene/turbine/dynamics'
 import { useT } from '../i18n'
@@ -70,7 +70,9 @@ export function Metrics() {
   const meanWind = windSum / TURBINE_COUNT
   const windFrom = ((Math.atan2(vx, vy) * 180) / Math.PI + 360) % 360
   const factor = output / CAPACITY_MW
-  const tide = tideAtFarms(weather, useStore.getState().time)
+  const time = useStore.getState().time
+  const tide = tideAtFarms(weather, time)
+  const generation = generationAt(weather, time)
 
   return (
     <aside className="metrics glass">
@@ -85,6 +87,11 @@ export function Metrics() {
       <div className="metrics__caption">
         {t.capacityCaption((factor * 100).toFixed(0), formatNumber(CAPACITY_MW), TURBINE_COUNT)}
       </div>
+      {generation && (
+        <div className="metrics__measured">
+          {t.measuredOutput(formatNumber(generation.mw.reduce<number>((sum, mw) => sum + (mw ?? 0), 0)), formatTime(generation.at, t.lang))}
+        </div>
+      )}
       <dl className="metrics__grid">
         <div>
           <dt>{t.hubWind}</dt>
@@ -125,6 +132,8 @@ export function Metrics() {
 const MODEL_STALE_S = 2 * 3600
 /** Buoys report hourly and reach CWA within the hour; older than this, they have stopped coming. */
 const OBSERVED_STALE_S = 3 * 3600
+/** Taipower reports every ten minutes. */
+const GENERATION_STALE_S = 3600
 
 /** Where the numbers come from and how fresh they are, flagged when an update has stopped. */
 function Sources({ weather }: { weather: Weather }) {
@@ -152,6 +161,12 @@ function Sources({ weather }: { weather: Weather }) {
       {measured(t.sourceWaves, weather.observed.waves)}
       {measured(t.sourceWind, weather.observed.wind)}
       {measured(t.sourceTide, weather.observed.tide)}
+      <li className={weather.generation === null || now - weather.generation.at > GENERATION_STALE_S ? 'is-stale' : ''}>
+        <span>{t.sourceOutput}</span>
+        {weather.generation === null
+          ? t.notMeasured
+          : `${t.taipower} · ${when(weather.generation.at)}${now - weather.generation.at > GENERATION_STALE_S ? ` ${age(weather.generation.at)}` : ''}`}
+      </li>
     </ul>
   )
 }

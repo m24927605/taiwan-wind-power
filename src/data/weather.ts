@@ -1,7 +1,8 @@
 import { lonLatToWorld, worldToDomainUv } from '../geo/domain'
-import type { Buoy, Series, TideGauge, WeatherPayload } from './cwa'
+import type { Buoy, Series, TideGauge } from './cwa'
 import { blend, pullsAt, type Reach, type Site } from './correction'
 import { CURRENT_GRID, MARINE_POINTS, SEA_COMPONENTS, fetchOpenMeteo, getJson, gridCoordinates, type OpenMeteo } from './openMeteo'
+import type { WeatherPayload } from './payload'
 import { WIND_FARMS } from './windfarms'
 
 // Live hourly ocean currents, sea state and sea level on a grid over the domain, and hub-height
@@ -26,6 +27,11 @@ export interface Weather {
   wind: Float32Array[]
   /** When the data was retrieved from Open-Meteo, unix seconds. */
   fetchedAt: number
+  /**
+   * What each farm delivered by Taipower's latest reading, MW, null for a farm it does not list;
+   * null when no reading came. A reading holds for its moment only.
+   */
+  generation: { at: number; mw: (number | null)[] } | null
   /** The measurements the model was corrected with, by kind; null where none came. */
   observed: { waves: Observed | null; wind: Observed | null; tide: Observed | null }
   /** Fetched just now, or read from the bundled snapshot. */
@@ -96,7 +102,10 @@ export async function fetchWeather(): Promise<Weather> {
   }
 }
 
-export function parseWeather({ at, marine, wind, windBuoys, buoys = [], tides = [] }: WeatherPayload, source: Weather['source']): Weather {
+export function parseWeather(
+  { at, marine, wind, windBuoys, buoys = [], tides = [], generation }: WeatherPayload,
+  source: Weather['source'],
+): Weather {
   const times = marine[0].hourly.time
   const currents = times.map((_, h) => {
     const frame = new Float32Array(GRID_POINTS * 2)
@@ -176,9 +185,28 @@ export function parseWeather({ at, marine, wind, windBuoys, buoys = [], tides = 
     seaLevel,
     wind: windByFarm,
     fetchedAt: at / 1000,
+    generation: generation ? { at: generation.at, mw: WIND_FARMS.map((f) => farmOutput(f.taipowerUnits, generation.units)) } : null,
     observed: { waves, wind: windObserved, tide },
     source,
   }
+}
+
+/**
+ * A reading stands for the scene this long either side of it, s: Taipower reads every ten minutes
+ * and publishes a few minutes later, and the Worker and the app each poll every ten.
+ */
+const GENERATION_HOLD_S = 45 * 60
+
+/** Taipower's reading when the scene time is near it, else null: it holds for its moment only. */
+export function generationAt(weather: Weather, t: number): Weather['generation'] {
+  const g = weather.generation
+  return g && Math.abs(t - g.at) <= GENERATION_HOLD_S ? g : null
+}
+
+/** A farm's output as the sum of its units Taipower lists; null when it lists none of them. */
+function farmOutput(names: string[], units: Record<string, number>): number | null {
+  const listed = names.filter((n) => n in units)
+  return listed.length ? listed.reduce((sum, n) => sum + units[n], 0) : null
 }
 
 /** What a set of stations measured: how many reported and the newest measurement; null if none. */

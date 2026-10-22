@@ -1,10 +1,11 @@
+import { generationAt } from '../data/weather'
 import { TURBINES, WIND_FARMS } from '../data/windfarms'
 import { farmDynamics } from '../scene/turbine/dynamics'
 import { TURBINE, powerAt } from '../scene/turbine/spec'
 import { worldToLonLat } from '../geo/domain'
 import { useT } from '../i18n'
 import { useStore } from '../state'
-import { compass8, useTicker } from './format'
+import { compass8, formatTime, useTicker } from './format'
 
 const CHART = { w: 232, h: 92, maxWind: 34 }
 
@@ -35,6 +36,7 @@ function PowerCurve({ wind, output, label }: { wind: number; output: number; lab
 export function TurbinePanel() {
   useTicker(200)
   const selected = useStore((s) => s.selected)
+  const weather = useStore((s) => s.weather)
   const tr = useT()
   if (selected === null) return null
   const t = TURBINES[selected]
@@ -56,6 +58,8 @@ export function TurbinePanel() {
         : wind >= TURBINE.ratedMs
           ? tr.stateRated
           : tr.statePartial
+  const generation = weather && generationAt(weather, useStore.getState().time)
+  const measured = generation?.mw[t.farm] ?? null
   // The farm's own-language name leads; the other one is the kicker.
   const [name, kicker] = tr.lang === 'zh' ? [farm.name, farm.nameEn] : [farm.nameEn, farm.name]
 
@@ -109,6 +113,11 @@ export function TurbinePanel() {
           </dd>
         </div>
       </dl>
+      {generation && measured !== null && (
+        <div className="panel__measured">
+          {tr.farmOutput(measured.toFixed(1), (output * farm.turbines).toFixed(1), formatTime(generation.at, tr.lang))}
+        </div>
+      )}
       <div className="panel__chart">
         <div className="panel__chart-title">{tr.powerCurveTitle}</div>
         <PowerCurve wind={wind} output={reference} label={tr.powerCurve} />

@@ -12,6 +12,7 @@ export function windOnly(speeds: number[], start = 0): Weather {
     seaLevel: [],
     wind: WIND_FARMS.map(() => series),
     fetchedAt: start,
+    generation: null,
     observed: { waves: null, wind: null, tide: null },
     source: 'live',
   }

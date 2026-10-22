@@ -1,5 +1,4 @@
 import { DOMAIN } from '../geo/domain'
-import type { OpenMeteo } from './openMeteo'
 
 // Measurements from the Central Weather Administration's open data: O-B0075-001 (the last 48
 // hours, hourly, about half an hour behind real time) from its moored buoys (wave height and
@@ -36,12 +35,6 @@ export interface Buoy extends Station {
 export interface TideGauge extends Station {
   /** Sea level against the gauge's own datum, m. */
   levels: Series
-}
-
-/** What the weather service returns: the Open-Meteo responses and, when CWA answered, the measurements. */
-export interface WeatherPayload extends OpenMeteo {
-  buoys?: Buoy[]
-  tides?: TideGauge[]
 }
 
 interface StationList {
