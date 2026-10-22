@@ -85,6 +85,7 @@ const zh = {
   turbineFoot: '機艙剖面：主軸承 → 齒輪箱 → 發電機。風機位置為依公開資料推估的近似陣列。',
   partFoot: '規格為 8 MW 級離岸風機典型值',
   farmLabel: (turbines: number, mw: number) => `${turbines} 座 · ${mw} MW`,
+  typhoon: (name: string, hpa: number, wind: number | null) => `颱風 ${name} · ${hpa} hPa${wind === null ? '' : ` · 最大風速 ${wind} m/s`}`,
 
   legend: '圖例',
   legendCurrent: '洋流 0 – 1.5 m/s',
@@ -203,6 +204,7 @@ const en: Messages = {
   turbineFoot: 'Nacelle cutaway: main bearing → gearbox → generator. Turbine positions are an approximate array from public data.',
   partFoot: 'Typical values for an 8 MW-class offshore turbine',
   farmLabel: (turbines: number, mw: number) => `${turbines} turbines · ${mw} MW`,
+  typhoon: (name: string, hpa: number, wind: number | null) => `Typhoon ${name} · ${hpa} hPa${wind === null ? '' : ` · max wind ${wind} m/s`}`,
 
   legend: 'Legend',
   legendCurrent: 'Current 0 – 1.5 m/s',

@@ -13,6 +13,7 @@ export function windOnly(speeds: number[], start = 0): Weather {
     wind: WIND_FARMS.map(() => series),
     fetchedAt: start,
     generation: null,
+    cyclones: [],
     observed: { waves: null, wind: null, tide: null },
     source: 'live',
   }

@@ -133,3 +133,88 @@ export async function fetchTides(key: string, stations: Station[]): Promise<Tide
     return levels.length ? [{ ...station, levels }] : []
   })
 }
+
+// Tropical cyclones: W-C0034-005, every active one over the north-west Pacific and the South
+// China Sea, with its track so far (hourly fixes) and CWA's forecast (6 hours to about four days
+// ahead).
+
+const CYCLONES = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore/W-C0034-005'
+
+export interface CycloneFix {
+  /** Unix seconds. */
+  t: number
+  lon: number
+  lat: number
+  /** Maximum sustained wind, m/s; null where not given. */
+  wind: number | null
+  /** Central pressure, hPa. */
+  pressure: number
+  /** Radius of winds of 15 m/s (gale, Beaufort 7) and 25 m/s (storm, Beaufort 10), km; null where none. */
+  r15: number | null
+  r25: number | null
+  /** Forecast fixes: the radius the centre falls within with 70 % probability, km. */
+  r70: number | null
+}
+
+export interface Cyclone {
+  name: string
+  nameEn: string
+  /** Analysed fixes, oldest first. */
+  track: CycloneFix[]
+  /** Forecast fixes from the latest analysis, earliest first. */
+  forecast: CycloneFix[]
+}
+
+interface RawFix {
+  DateTime?: string
+  InitialTime?: string
+  ForecastHour?: string
+  CoordinateLongitude: string
+  CoordinateLatitude: string
+  MaxWindSpeed?: string
+  Pressure: string
+  Circle15ms?: { Radius: string }
+  Circle25ms?: { Radius: string }
+  Radius70PercentProbability?: string
+}
+
+interface RawCyclones {
+  records: {
+    TropicalCyclones?: {
+      TropicalCyclone: {
+        TyphoonName: string
+        CwaTyphoonName?: string
+        AnalysisData: { Fix: RawFix[] }
+        ForecastData?: { Fix: RawFix[] }
+      }[]
+    }
+  }
+}
+
+function fix(raw: RawFix): CycloneFix {
+  const t = raw.DateTime
+    ? Date.parse(raw.DateTime) / 1000
+    : Date.parse(raw.InitialTime!) / 1000 + Number(raw.ForecastHour) * 3600
+  const optional = (v?: string) => (v === undefined || v === '' ? null : Number(v))
+  return {
+    t,
+    lon: Number(raw.CoordinateLongitude),
+    lat: Number(raw.CoordinateLatitude),
+    wind: optional(raw.MaxWindSpeed),
+    pressure: Number(raw.Pressure),
+    r15: optional(raw.Circle15ms?.Radius),
+    r25: optional(raw.Circle25ms?.Radius),
+    r70: optional(raw.Radius70PercentProbability),
+  }
+}
+
+/** The active tropical cyclones; none outside the season. */
+export async function fetchCyclones(key: string): Promise<Cyclone[]> {
+  const data = await getCwa<RawCyclones>(CYCLONES, key)
+  return (data.records.TropicalCyclones?.TropicalCyclone ?? []).map((c) => ({
+    name: c.CwaTyphoonName ?? c.TyphoonName,
+    nameEn: c.TyphoonName,
+    track: c.AnalysisData.Fix.map(fix).sort((a, b) => a.t - b.t),
+    forecast: (c.ForecastData?.Fix ?? []).map(fix).sort((a, b) => a.t - b.t),
+  }))
+}

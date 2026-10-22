@@ -21,6 +21,7 @@ import { Sky, SkyEnvironment } from './Sky'
 import { Stars } from './Stars'
 import { StatsProbe } from './StatsProbe'
 import { Terrain } from './Terrain'
+import { Typhoons } from './Typhoons'
 import { HeroTurbine } from './turbine/HeroTurbine'
 import { WindFarms } from './turbine/WindFarms'
 
@@ -88,6 +89,7 @@ export function Scene() {
         <CloudLayer dpr={dpr} />
         <Overlay>
           <FarmBounds />
+          <Typhoons />
         </Overlay>
         <Bloom mipmapBlur intensity={0.6} luminanceThreshold={2.2} luminanceSmoothing={0.5} radius={0.7} />
         <Vignette offset={0.32} darkness={0.55} />

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { lonLatToWorld } from '../geo/domain'
-import type { Buoy, TideGauge } from './cwa'
+import type { Buoy, Cyclone, TideGauge } from './cwa'
 import { CURRENT_GRID, MARINE_POINTS } from './openMeteo'
 import type { WeatherPayload } from './payload'
-import { parseWeather, seaAt, seaLevelAt, windAt } from './weather'
+import { cycloneAt, parseWeather, seaAt, seaLevelAt, windAt } from './weather'
 import { WIND_FARMS } from './windfarms'
 
 const HOUR = 3600
@@ -129,6 +129,39 @@ describe('Taipower output', () => {
     expect(mw('formosa2')).toBeCloseTo(360.6)
     expect(mw('yunneng')).toBeNull()
     expect(weather.generation!.at).toBe(5 * HOUR)
+  })
+})
+
+describe('cycloneAt', () => {
+  const fix = (h: number, lon: number, r25: number | null, r70: number | null = null) => ({
+    t: h * HOUR,
+    lon,
+    lat: 22,
+    wind: 45,
+    pressure: 940,
+    r15: 300,
+    r25,
+    r70,
+  })
+  // Analysed at hours 0 and 1, forecast from hour 1 (repeating the last fix) to hour 7.
+  const cyclone: Cyclone = { name: '測試', nameEn: 'TEST', track: [fix(0, 125, 140), fix(1, 124.8, 140)], forecast: [fix(1, 124.8, 140, 0), fix(7, 124.2, 120, 30)] }
+
+  it('follows the track, then the forecast', () => {
+    expect(cycloneAt(cyclone, 0.5 * HOUR)!.lon).toBeCloseTo(124.9)
+    const ahead = cycloneAt(cyclone, 4 * HOUR)!
+    expect(ahead.lon).toBeCloseTo(124.5)
+    expect(ahead.r25).toBeCloseTo(130)
+    expect(ahead.r70).toBeCloseTo(15)
+  })
+
+  it('is nowhere before the first fix or after the last', () => {
+    expect(cycloneAt(cyclone, -HOUR)).toBeNull()
+    expect(cycloneAt(cyclone, 8 * HOUR)).toBeNull()
+  })
+
+  it('drops a radius one of its fixes lacks', () => {
+    const patchy = { ...cyclone, track: [fix(0, 125, null), fix(1, 124.8, 140)] }
+    expect(cycloneAt(patchy, 0.5 * HOUR)!.r25).toBeNull()
   })
 })
 

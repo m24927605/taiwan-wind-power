@@ -1,5 +1,5 @@
 import { lonLatToWorld, worldToDomainUv } from '../geo/domain'
-import type { Buoy, Series, TideGauge } from './cwa'
+import type { Buoy, Cyclone, CycloneFix, Series, TideGauge } from './cwa'
 import { blend, pullsAt, type Reach, type Site } from './correction'
 import { CURRENT_GRID, MARINE_POINTS, SEA_COMPONENTS, fetchOpenMeteo, getJson, gridCoordinates, type OpenMeteo } from './openMeteo'
 import type { WeatherPayload } from './payload'
@@ -32,6 +32,8 @@ export interface Weather {
    * null when no reading came. A reading holds for its moment only.
    */
   generation: { at: number; mw: (number | null)[] } | null
+  /** Active tropical cyclones, from CWA. */
+  cyclones: Cyclone[]
   /** The measurements the model was corrected with, by kind; null where none came. */
   observed: { waves: Observed | null; wind: Observed | null; tide: Observed | null }
   /** Fetched just now, or read from the bundled snapshot. */
@@ -103,7 +105,7 @@ export async function fetchWeather(): Promise<Weather> {
 }
 
 export function parseWeather(
-  { at, marine, wind, windBuoys, buoys = [], tides = [], generation }: WeatherPayload,
+  { at, marine, wind, windBuoys, buoys = [], tides = [], cyclones = [], generation }: WeatherPayload,
   source: Weather['source'],
 ): Weather {
   const times = marine[0].hourly.time
@@ -185,6 +187,7 @@ export function parseWeather(
     seaLevel,
     wind: windByFarm,
     fetchedAt: at / 1000,
+    cyclones,
     generation: generation ? { at: generation.at, mw: WIND_FARMS.map((f) => farmOutput(f.taipowerUnits, generation.units)) } : null,
     observed: { waves, wind: windObserved, tide },
     source,
@@ -201,6 +204,30 @@ const GENERATION_HOLD_S = 45 * 60
 export function generationAt(weather: Weather, t: number): Weather['generation'] {
   const g = weather.generation
   return g && Math.abs(t - g.at) <= GENERATION_HOLD_S ? g : null
+}
+
+/**
+ * A cyclone at time t, interpolated along its track and on into the forecast; null before its
+ * first fix or after its last. Radii a fix does not give are taken as absent.
+ */
+export function cycloneAt(cyclone: Cyclone, t: number): CycloneFix | null {
+  const fixes = [...cyclone.track, ...cyclone.forecast.filter((f) => f.t > (cyclone.track.at(-1)?.t ?? -Infinity))]
+  const j = fixes.findIndex((f) => f.t >= t)
+  if (j < 0 || (j === 0 && fixes[0].t > t)) return null
+  if (j === 0) return fixes[0]
+  const [a, b] = [fixes[j - 1], fixes[j]]
+  const k = (t - a.t) / (b.t - a.t)
+  const mix = (x: number | null, y: number | null) => (x === null || y === null ? null : x + (y - x) * k)
+  return {
+    t,
+    lon: a.lon + (b.lon - a.lon) * k,
+    lat: a.lat + (b.lat - a.lat) * k,
+    wind: mix(a.wind, b.wind),
+    pressure: a.pressure + (b.pressure - a.pressure) * k,
+    r15: mix(a.r15, b.r15),
+    r25: mix(a.r25, b.r25),
+    r70: b.r70 === null ? null : (a.r70 ?? 0) + (b.r70 - (a.r70 ?? 0)) * k,
+  }
 }
 
 /** A farm's output as the sum of its units Taipower lists; null when it lists none of them. */
