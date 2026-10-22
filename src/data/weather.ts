@@ -1,6 +1,6 @@
 import { lonLatToWorld, worldToDomainUv } from '../geo/domain'
 import type { Buoy, WeatherPayload } from './cwa'
-import { CURRENT_GRID, SEA_COMPONENTS, fetchOpenMeteo, getJson, gridCoordinates, type OpenMeteo } from './openMeteo'
+import { CURRENT_GRID, MARINE_POINTS, SEA_COMPONENTS, fetchOpenMeteo, getJson, gridCoordinates, type OpenMeteo } from './openMeteo'
 
 // Live hourly ocean currents and sea state on a grid over the domain, and hub-height wind at every
 // wind farm, from yesterday through three days ahead (see openMeteo.ts). They come from the shared
@@ -30,6 +30,8 @@ export interface Weather {
 
 const SNAPSHOT_URL = 'data/weather-snapshot.json'
 
+const GRID_POINTS = CURRENT_GRID.cols * CURRENT_GRID.rows
+
 /** Values per grid point in a sea-state frame: four per component. */
 const SEA_STRIDE = SEA_COMPONENTS.length * 4
 
@@ -39,7 +41,7 @@ const WEATHER_SERVICE = import.meta.env.VITE_WEATHER_SERVICE
 // Open-Meteo bills every coordinate of a multi-point request as one call against the visitor's
 // own quota, and the data only changes hourly, so a direct fetch is kept per browser for half an hour.
 const CACHE_TTL_MS = 30 * 60 * 1000
-const CACHE_KEY = 'wind-tide:open-meteo'
+const CACHE_KEY = 'wind-tide:open-meteo:sea-points'
 
 async function fetchOpenMeteoCached(): Promise<OpenMeteo> {
   try {
@@ -81,9 +83,10 @@ export async function fetchWeather(): Promise<Weather> {
 export function parseWeather({ at, marine, wind, buoys }: WeatherPayload, source: Weather['source']): Weather {
   const times = marine[0].hourly.time
   const currents = times.map((_, h) => {
-    const frame = new Float32Array(marine.length * 2)
-    const known = new Uint8Array(marine.length)
-    marine.forEach((point, i) => {
+    const frame = new Float32Array(GRID_POINTS * 2)
+    const known = new Uint8Array(GRID_POINTS)
+    marine.forEach((point, m) => {
+      const i = MARINE_POINTS[m]
       // Velocity is km/h; direction is the bearing the current flows toward.
       const velocity = point.hourly.ocean_current_velocity[h]
       const direction = point.hourly.ocean_current_direction[h]
@@ -99,9 +102,10 @@ export function parseWeather({ at, marine, wind, buoys }: WeatherPayload, source
   })
 
   const sea = times.map((_, h) => {
-    const frame = new Float32Array(marine.length * SEA_STRIDE)
-    const known = new Uint8Array(marine.length)
-    marine.forEach((point, i) => {
+    const frame = new Float32Array(GRID_POINTS * SEA_STRIDE)
+    const known = new Uint8Array(GRID_POINTS)
+    marine.forEach((point, m) => {
+      const i = MARINE_POINTS[m]
       const values = SEA_COMPONENTS.map((c) => [point.hourly[`${c}_height`][h], point.hourly[`${c}_period`][h], point.hourly[`${c}_direction`][h]])
       if (values.some((v) => v.includes(null))) return
       values.forEach(([height, period, direction], k) => {

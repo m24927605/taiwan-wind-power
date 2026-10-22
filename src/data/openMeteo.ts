@@ -12,6 +12,21 @@ export const LIVE_RANGE = 'past_days=1&forecast_days=3&timeformat=unixtime'
 /** A snapshot has to last until the next deploy, so it reaches as far ahead as the marine model. */
 export const SNAPSHOT_RANGE = 'past_days=1&forecast_days=7&timeformat=unixtime'
 
+/**
+ * Grid points Open-Meteo has no marine data for (the mainland coast and Taiwan's interior), as its
+ * responses showed in October 2026. They are left out of the request, which Open-Meteo bills per
+ * point; the app fills them from their neighbours like any other empty point (see weather.ts).
+ */
+const LAND_POINTS = new Set([
+  0, 1, 2, 3, 4, 5, 6, 7, 24, 25, 26, 27, 28, 29, 30, 48, 49, 50, 51, 52, 53, 72, 73, 74, 75, 85, 96, 97, 98, 99,
+  109, 120, 121, 122, 132, 133, 144, 155, 156, 179, 180, 203, 204, 227,
+])
+
+/** The grid points the marine request asks for, in the order of its responses. */
+export const MARINE_POINTS = Array.from({ length: CURRENT_GRID.cols * CURRENT_GRID.rows }, (_, i) => i).filter(
+  (i) => !LAND_POINTS.has(i),
+)
+
 /** Longitude and latitude of every grid point, row by row from the north-west corner. */
 export function gridCoordinates() {
   const lats: number[] = []
@@ -45,6 +60,7 @@ type MarineVariable =
 export interface OpenMeteo {
   /** Retrieval time, unix milliseconds. */
   at: number
+  /** One per MARINE_POINTS entry. */
   marine: Hourly<MarineVariable>[]
   wind: Hourly<'wind_speed_100m' | 'wind_direction_100m'>[]
 }
@@ -54,7 +70,8 @@ export function openMeteoUrls(range = LIVE_RANGE): { marine: string; wind: strin
   const { lats, lons } = gridCoordinates()
   return {
     marine:
-      `https://marine-api.open-meteo.com/v1/marine?latitude=${lats}&longitude=${lons}` +
+      `https://marine-api.open-meteo.com/v1/marine?latitude=${MARINE_POINTS.map((i) => lats[i])}` +
+      `&longitude=${MARINE_POINTS.map((i) => lons[i])}` +
       `&hourly=ocean_current_velocity,ocean_current_direction,` +
       SEA_COMPONENTS.map((c) => `${c}_height,${c}_period,${c}_direction`).join(',') +
       `&${range}`,

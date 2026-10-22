@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { lonLatToWorld } from '../geo/domain'
 import type { Buoy } from './cwa'
-import { gridCoordinates } from './openMeteo'
+import { CURRENT_GRID, MARINE_POINTS } from './openMeteo'
 import { parseWeather, seaAt } from './weather'
 
 const HOUR = 3600
@@ -11,8 +11,7 @@ const HOURS = 72
 function payload(buoys?: Buoy[]) {
   const time = Array.from({ length: HOURS }, (_, h) => h * HOUR)
   const constant = (v: number) => time.map(() => v)
-  const { lats } = gridCoordinates()
-  const marine = lats.map(() => ({
+  const marine = MARINE_POINTS.map(() => ({
     hourly: {
       time,
       ocean_current_velocity: constant(0),
@@ -56,6 +55,13 @@ describe('buoy correction', () => {
   it('keeps the periods and records when it was observed', () => {
     expect(seaAt(weather, 10 * HOUR, bx, bz).swell.tm).toBeCloseTo(9)
     expect(weather.observedAt).toBe(10 * HOUR)
+  })
+
+  it('fills the points left out of the request from their neighbours', () => {
+    const plain = parseWeather(payload(), 'live')
+    expect(MARINE_POINTS).not.toContain(0)
+    expect(plain.sea[0][0]).toBeCloseTo(2)
+    expect(plain.sea[0].length).toBe(CURRENT_GRID.cols * CURRENT_GRID.rows * 8)
   })
 
   it('stands as modelled without buoys', () => {

@@ -269,9 +269,10 @@ long, and back up when there is headroom. MSAA in the composer is disabled above
 it costs more than it shows. Touch devices start with fewer particles.
 
 **Data budget.** Open-Meteo counts every coordinate of a multi-point request as one call, against
-a per-IP limit (600 a minute and 10,000 a day on the free tier), and one load asks for 345
-coordinates. The weather service makes that request 24 times a day for every visitor, about 8,300
-calls. When the app has to fetch Open-Meteo itself, the response is kept in `localStorage` for 30
+a per-IP limit (600 a minute and 10,000 a day on the free tier). One load asks for 301
+coordinates: the grid's sea points (the 44 on land, where the marine model has no data, are left out
+and filled from their neighbours) and the farms. The weather service makes that request 24 times a
+day for every visitor, about 7,200 calls. When the app has to fetch Open-Meteo itself, the response is kept in `localStorage` for 30
 minutes, matching the hourly update cadence, so reloads cost nothing.
 
 ### Pitfalls worth knowing
