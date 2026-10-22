@@ -1,5 +1,6 @@
-import { worldToDomainUv } from '../geo/domain'
-import { CURRENT_GRID, SEA_COMPONENTS, fetchOpenMeteo, getJson, type OpenMeteo } from './openMeteo'
+import { lonLatToWorld, worldToDomainUv } from '../geo/domain'
+import type { Buoy, WeatherPayload } from './cwa'
+import { CURRENT_GRID, SEA_COMPONENTS, fetchOpenMeteo, getJson, gridCoordinates, type OpenMeteo } from './openMeteo'
 
 // Live hourly ocean currents and sea state on a grid over the domain, and hub-height wind at every
 // wind farm, from yesterday through three days ahead (see openMeteo.ts). They come from the shared
@@ -61,7 +62,7 @@ async function fetchOpenMeteoCached(): Promise<OpenMeteo> {
 export async function fetchWeather(): Promise<Weather> {
   if (WEATHER_SERVICE) {
     try {
-      return parseWeather(await getJson<OpenMeteo>(`${WEATHER_SERVICE}/weather`), 'live')
+      return parseWeather(await getJson<WeatherPayload>(`${WEATHER_SERVICE}/weather`), 'live')
     } catch {
       // Out of reach or failing: fetch Open-Meteo here instead.
     }
@@ -75,7 +76,7 @@ export async function fetchWeather(): Promise<Weather> {
   }
 }
 
-function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']): Weather {
+function parseWeather({ at, marine, wind, buoys }: WeatherPayload, source: Weather['source']): Weather {
   const times = marine[0].hourly.time
   const currents = times.map((_, h) => {
     const frame = new Float32Array(marine.length * 2)
@@ -111,6 +112,7 @@ function parseWeather({ at, marine, wind }: OpenMeteo, source: Weather['source']
     fillUnknown(frame, known, SEA_STRIDE)
     return frame
   })
+  if (buoys?.length) correctSea(sea, times, buoys)
 
   const windByFarm = wind.map((farm) => {
     const byTime = new Map(farm.hourly.time.map((t, i) => [t, i]))
@@ -197,15 +199,8 @@ export interface SeaComponent {
   fromRad: number
 }
 
-/**
- * Sea state at a world position: the wind sea and the swell, interpolated across the grid and
- * between hours. Outside the domain the nearest edge stands.
- */
-export function seaAt(weather: Weather, t: number, x: number, z: number): { windSea: SeaComponent; swell: SeaComponent } {
-  const f = hourIndex(weather, t)
-  const i = Math.floor(f)
-  const j = Math.min(i + 1, weather.times.length - 1)
-  const k = f - i
+/** The four grid points around a world position and their bilinear weights; outside the domain the nearest edge stands. */
+function gridCorners(x: number, z: number): [point: number, weight: number][] {
   const { cols, rows } = CURRENT_GRID
   const [u, v] = worldToDomainUv(x, z)
   const gx = Math.min(Math.max(u, 0), 1) * (cols - 1)
@@ -214,12 +209,24 @@ export function seaAt(weather: Weather, t: number, x: number, z: number): { wind
   const r0 = Math.min(Math.floor(gy), rows - 2)
   const fx = gx - c0
   const fy = gy - r0
-  const corners: [number, number][] = [
+  return [
     [r0 * cols + c0, (1 - fx) * (1 - fy)],
     [r0 * cols + c0 + 1, fx * (1 - fy)],
     [(r0 + 1) * cols + c0, (1 - fx) * fy],
     [(r0 + 1) * cols + c0 + 1, fx * fy],
   ]
+}
+
+/**
+ * Sea state at a world position: the wind sea and the swell, interpolated across the grid and
+ * between hours.
+ */
+export function seaAt(weather: Weather, t: number, x: number, z: number): { windSea: SeaComponent; swell: SeaComponent } {
+  const f = hourIndex(weather, t)
+  const i = Math.floor(f)
+  const j = Math.min(i + 1, weather.times.length - 1)
+  const k = f - i
+  const corners = gridCorners(x, z)
   const value = (o: number) => {
     let acc = 0
     for (const [p, w] of corners) acc += (weather.sea[i][p * SEA_STRIDE + o] * (1 - k) + weather.sea[j][p * SEA_STRIDE + o] * k) * w
@@ -232,4 +239,72 @@ export function seaAt(weather: Weather, t: number, x: number, z: number): { wind
     fromRad: Math.atan2(value(c * 4 + 2), value(c * 4 + 3)),
   })
   return { windSea: component(0), swell: component(1) }
+}
+
+/** A buoy pulls the modelled wave height toward what it measures over about this distance, km, */
+const BUOY_REACH_KM = 30
+/** and about this long either side of a measurement, s. */
+const BUOY_HOLD_S = 6 * 3600
+/** The model's own weight: where the buoys' weights add up to this, half their correction applies. */
+const MODEL_WEIGHT = 0.1
+/** A buoy scales the model by at most this factor either way. */
+const MAX_RATIO = 2
+/** Below this modelled height, m, a ratio says more about the grid than about the sea. */
+const MIN_MODEL_HS = 0.2
+
+/**
+ * Scales the modelled wave heights toward the buoys' measurements, in place. Each measurement
+ * gives a ratio to the model at its buoy and hour; every grid point and hour takes a blend of the
+ * log ratios, weighted by distance and by time from the measurement, against the model's own
+ * weight, so far from the buoys and far into the forecast the model stands. Coastal buoys see a
+ * sheltered sea the 36 km grid cannot, which is why their reach is short. Both components scale
+ * alike, so the total significant height scales by the blended ratio; periods stay the model's.
+ */
+function correctSea(sea: Float32Array[], times: number[], buoys: Buoy[]) {
+  const totalHs = (frame: Float32Array, corners: [number, number][]) => {
+    let wind = 0
+    let swell = 0
+    for (const [p, w] of corners) {
+      wind += frame[p * SEA_STRIDE] * w
+      swell += frame[p * SEA_STRIDE + 4] * w
+    }
+    return Math.hypot(wind, swell)
+  }
+  // Ratios first, from the uncorrected model.
+  const sites = buoys.map((buoy) => {
+    const [x, z] = lonLatToWorld(buoy.lon, buoy.lat)
+    const corners = gridCorners(x, z)
+    const ratios: [t: number, logRatio: number][] = []
+    for (const [t, measured] of buoy.waves) {
+      const h = (t - times[0]) / 3600
+      if (!Number.isInteger(h) || h < 0 || h >= times.length) continue
+      const modelled = totalHs(sea[h], corners)
+      if (modelled < MIN_MODEL_HS) continue
+      ratios.push([t, Math.log(Math.min(Math.max(measured / modelled, 1 / MAX_RATIO), MAX_RATIO))])
+    }
+    return { x, z, ratios }
+  })
+  const { lats, lons } = gridCoordinates()
+  const points = lats.map((lat, i) => lonLatToWorld(lons[i], lat))
+  times.forEach((t, h) => {
+    // Each buoy's measurement nearest this hour, weighted by how far it lies in time.
+    const pulls = sites.flatMap(({ x, z, ratios }) => {
+      if (ratios.length === 0) return []
+      const [tn, logRatio] = ratios.reduce((best, r) => (Math.abs(r[0] - t) < Math.abs(best[0] - t) ? r : best))
+      return [{ x, z, logRatio, weight: Math.exp(-Math.abs(tn - t) / BUOY_HOLD_S) }]
+    })
+    if (pulls.length === 0) return
+    const frame = sea[h]
+    points.forEach(([px, pz], p) => {
+      let sum = 0
+      let weight = 0
+      for (const pull of pulls) {
+        const w = pull.weight * Math.exp(-((px - pull.x) ** 2 + (pz - pull.z) ** 2) / BUOY_REACH_KM ** 2)
+        sum += w * pull.logRatio
+        weight += w
+      }
+      const scale = Math.exp(sum / (weight + MODEL_WEIGHT))
+      for (let c = 0; c < SEA_COMPONENTS.length; c++) frame[p * SEA_STRIDE + c * 4] *= scale
+    })
+  })
 }

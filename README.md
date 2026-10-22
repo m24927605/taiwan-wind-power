@@ -31,13 +31,17 @@ npm run build
 Every push to `main` builds the app and publishes it to the `gh-pages` branch under `app/`
 (`.github/workflows/pages.yml`); the film page sits at the root of that branch.
 
-The weather comes through a small Cloudflare Worker (`worker/`) that fetches Open-Meteo once for
-every visitor and caches it for 30 minutes. The app reads its origin from `VITE_WEATHER_SERVICE`
-(`.env.production`); without it, or when it is out of reach, the app fetches Open-Meteo itself.
+The weather comes through a small Cloudflare Worker (`worker/`) that fetches Open-Meteo and the
+CWA buoys once for every visitor and caches them for 30 minutes; the CWA key lives only there. The
+app reads its origin from `VITE_WEATHER_SERVICE` (`.env.production`); without it, or when it is
+out of reach, the app fetches Open-Meteo itself and shows the model uncorrected.
 
 ```bash
+npx wrangler secret put CWA_API_KEY --config worker/wrangler.jsonc   # once; a CWA open data key
 npx wrangler deploy --config worker/wrangler.jsonc
 ```
+
+For `wrangler dev`, put the key in `worker/.dev.vars` (`CWA_API_KEY=...`, git-ignored).
 
 ## What is live
 
@@ -48,6 +52,7 @@ npx wrangler deploy --config worker/wrangler.jsonc
 | Land imagery | Sentinel-2 cloudless 2024, EOX | Baked by `scripts/build-imagery.ts` into a 4096² WebP over the domain (1.2 MB), a 4096 × 8192 WebP over the island (4.2 MB, desktop only) and a 4096² normal map |
 | Ocean currents | Open-Meteo Marine API | 24 × 14 grid over the domain (about 36 km apart), hourly, yesterday through three days ahead |
 | Sea state | Open-Meteo Marine API | Wind sea and swell (height, period, direction) on the same grid, sampled where the camera is; the two peaks of the wave spectrum |
+| Measured waves | Central Weather Administration open data (O-B0075-001, O-B0076-001) | Hourly significant wave height at the moored buoys in the domain (24 in October 2026), the last 48 hours. Each measurement scales the modelled heights toward itself within about 30 km and 6 hours (log ratio, at most ×2 either way), so near the buoys the sea is the measured one and far into the forecast the model stands |
 | Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm, output and cloud drift, and the whitecaps, blended between farms by inverse squared distance from the camera |
 | Clouds | Himawari-9 AHI via NASA GIBS | The only clouds: hourly scans over 113.5–131.5 E, 16.5–33 N (everything the camera can see), about 30 minutes behind real time, loaded as scene time needs them. Band 13 infrared (brightness temperature, lapse-corrected over land) and, by day, band 3 visible place the cumulus, set its height and lay the cirrus. Hours with no scan have no clouds |
 | Sun, moon and sky | Solar and lunar positions | Day, dusk and moonlit night (at the real phase) follow the scene clock |
@@ -106,7 +111,7 @@ src/
     turbine/          GLB access, per-farm dynamics, instanced LOD, cutaway hero
   ui/               HUD, timeline, toolbar, turbine panel, engineering overlay
   state.ts          zustand store: stage, data, scene time, tools, stats
-worker/             weather service (Cloudflare Worker): Open-Meteo once for every visitor
+worker/             weather service (Cloudflare Worker): Open-Meteo and CWA buoys once for every visitor
 ```
 
 Per-frame simulation state, such as rotor angle, yaw and wind per farm, lives in plain typed
@@ -324,6 +329,6 @@ rucisko, sea wind by Potapooo, gulls by steaq and Snapper4298, wind turbine by e
 
 Imagery: Sentinel-2 cloudless 2024 – https://s2maps.eu by EOX IT Services GmbH (contains modified
 Copernicus Sentinel data 2024), licensed CC BY-NC-SA 4.0. Elevation: AWS Terrain Tiles. Weather:
-Open-Meteo. Clouds: Himawari-9 (JMA) imagery through NASA GIBS. Stars: Yale Bright Star Catalogue,
+Open-Meteo; measured waves: Central Weather Administration open data. Clouds: Himawari-9 (JMA) imagery through NASA GIBS. Stars: Yale Bright Star Catalogue,
 5th revised edition (Hoffleit & Warren 1991), from CDS. Moon: Solar System Scope textures (CC BY
 4.0), based on NASA imagery. Film narration: Gemini TTS.

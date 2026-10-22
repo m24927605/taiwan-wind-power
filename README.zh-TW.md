@@ -29,13 +29,16 @@ npm run build
 每次推送到 `main` 都會自動建置，並發佈到 `gh-pages` 分支的 `app/` 資料夾（`.github/workflows/pages.yml`）；
 影片頁位於該分支的根目錄。
 
-氣象資料經由一個小型 Cloudflare Worker（`worker/`）取得：它替所有訪客統一抓取 Open-Meteo，並快取 30 分鐘。
-應用程式從 `VITE_WEATHER_SERVICE`（`.env.production`）讀取它的網址；未設定或連不上時，應用程式會自己抓取
-Open-Meteo。
+氣象資料經由一個小型 Cloudflare Worker（`worker/`）取得：它替所有訪客統一抓取 Open-Meteo 與氣象署浮標資料，
+並快取 30 分鐘；氣象署授權碼只存在那裡。應用程式從 `VITE_WEATHER_SERVICE`（`.env.production`）讀取它的網址；
+未設定或連不上時，應用程式會自己抓取 Open-Meteo，並顯示未經校正的模式值。
 
 ```bash
+npx wrangler secret put CWA_API_KEY --config worker/wrangler.jsonc   # 只需一次；氣象署開放資料授權碼
 npx wrangler deploy --config worker/wrangler.jsonc
 ```
+
+使用 `wrangler dev` 時，把授權碼放在 `worker/.dev.vars`（`CWA_API_KEY=...`，已被 git 忽略）。
 
 ## 即時資料
 
@@ -46,6 +49,7 @@ npx wrangler deploy --config worker/wrangler.jsonc
 | 陸地影像 | Sentinel-2 cloudless 2024, EOX | 由 `scripts/build-imagery.ts` 烘焙成整個範圍的 4096² WebP（1.2 MB）、本島的 4096 × 8192 WebP（4.2 MB，僅桌機）與 4096² 法線貼圖 |
 | 洋流 | Open-Meteo Marine API | 範圍內 24 × 14 網格（間距約 36 公里），逐時，昨天到未來三天 |
 | 海況 | Open-Meteo Marine API | 風浪與湧浪（波高、週期、方向），同一套網格，依鏡頭所在位置取樣；即波譜的兩個峰 |
+| 實測浪高 | 中央氣象署開放資料（O-B0075-001、O-B0076-001） | 範圍內各資料浮標（2026 年 10 月共 24 個）的逐時示性波高，過去 48 小時。每筆觀測在約 30 公里、6 小時內把模式浪高往實測值縮放（取對數比例，最多 2 倍），所以浮標附近是實測的海況，越往未來越回到模式 |
 | 輪轂高度風速 | Open-Meteo Forecast API，100 m | 每座風場一個點；驅動偏航、轉速、出力與雲的飄移；白浪則依與鏡頭距離的平方反比混合各風場風速 |
 | 雲 | 向日葵 9 號 AHI，經 NASA GIBS | 唯一的雲來源：東經 113.5°–131.5°、北緯 16.5°–33°（相機看得到的全部範圍）每小時一張、約晚真實時間 30 分鐘的掃描，依場景時間按需載入。Band 13 紅外線（亮溫，陸地依氣溫遞減率修正），白天再加 Band 3 可見光，決定積雲的位置與高度，以及卷雲的分布。沒有掃描的時段不畫雲 |
 | 太陽、月亮與天空 | 日月位置 | 白天、黃昏與月光下的夜晚（真實月相）都跟著場景時鐘 |
@@ -95,7 +99,7 @@ src/
     turbine/          GLB 存取、各風場動態、instanced LOD、剖面主角風機
   ui/               HUD、時間軸、工具列、風機面板、工程模式疊層
   state.ts          zustand store：階段、資料、場景時間、工具、統計
-worker/             氣象服務（Cloudflare Worker）：替所有訪客統一抓取 Open-Meteo
+worker/             氣象服務（Cloudflare Worker）：替所有訪客統一抓取 Open-Meteo 與氣象署浮標
 ```
 
 每一幀的模擬狀態，例如各風場的轉子角度、偏航與風速，存放在一般的型別陣列（`farmDynamics`）中，
@@ -257,6 +261,6 @@ Potapooo 的海風、steaq 與 Snapper4298 的海鷗、eguaus 的風機聲，皆
 交叉淡化的循環並做過響度正規化。
 
 影像：Sentinel-2 cloudless 2024 – https://s2maps.eu，EOX IT Services GmbH（含修改過的 Copernicus
-Sentinel 2024 資料），授權 CC BY-NC-SA 4.0。高程：AWS Terrain Tiles。氣象：Open-Meteo。雲圖：向日葵 9 號（日本氣象廳）影像，經 NASA GIBS 提供。星表：耶魯亮星星表第 5 修訂版（Hoffleit &
+Sentinel 2024 資料），授權 CC BY-NC-SA 4.0。高程：AWS Terrain Tiles。氣象：Open-Meteo；實測浪高：中央氣象署開放資料。雲圖：向日葵 9 號（日本氣象廳）影像，經 NASA GIBS 提供。星表：耶魯亮星星表第 5 修訂版（Hoffleit &
 Warren 1991），取自 CDS。月面：Solar System Scope 貼圖（CC BY 4.0），依 NASA 影像製作。
 介紹影片旁白：Gemini TTS。

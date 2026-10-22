@@ -12,7 +12,8 @@ export const LIVE_RANGE = 'past_days=1&forecast_days=3&timeformat=unixtime'
 /** A snapshot has to last until the next deploy, so it reaches as far ahead as the marine model. */
 export const SNAPSHOT_RANGE = 'past_days=1&forecast_days=7&timeformat=unixtime'
 
-function gridCoordinates() {
+/** Longitude and latitude of every grid point, row by row from the north-west corner. */
+export function gridCoordinates() {
   const lats: number[] = []
   const lons: number[] = []
   for (let r = 0; r < CURRENT_GRID.rows; r++) {
