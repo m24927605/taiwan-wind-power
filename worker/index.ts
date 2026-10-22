@@ -8,6 +8,7 @@ import { fetchOpenMeteo } from '../src/data/openMeteo'
 
 interface Env {
   CWA_API_KEY: string
+  CF_VERSION_METADATA: WorkerVersionMetadata
 }
 
 /** Open-Meteo refreshes hourly and the buoys report hourly; half an hour keeps the shown hour current. */
@@ -23,7 +24,8 @@ export default {
     if (request.method !== 'GET' || url.pathname !== '/weather') return new Response('Not found', { status: 404, headers: CORS })
 
     const cache = caches.default
-    const key = new Request(`${url.origin}/weather`)
+    // Keyed by deployment, so a new version never serves what an older one cached.
+    const key = new Request(`${url.origin}/weather?version=${env.CF_VERSION_METADATA.id}`)
     const cached = await cache.match(key)
     if (cached) return cached
 
