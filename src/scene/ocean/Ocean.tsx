@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import type { Elevation } from '../../data/elevation'
 import { seaAt, seaLevelAt, type SeaComponent } from '../../data/weather'
-import { WORLD } from '../../geo/domain'
+import { TIDAL_FLATS, WORLD, worldExtent } from '../../geo/domain'
 import { useStore } from '../../state'
 import { ATMOSPHERE_GLSL, atmosphere } from '../atmosphere'
 import { CLOUDS_GLSL, clouds } from '../clouds'
@@ -53,9 +53,16 @@ function oceanGeometry(): THREE.BufferGeometry {
   return geometry
 }
 
+const FLATS_WORLD = worldExtent(TIDAL_FLATS)
+/** Until the tidal flats load, or if they fail to: none anywhere. */
+const NO_FLATS = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1)
+NO_FLATS.needsUpdate = true
+
 const SEABED_GLSL = /* glsl */ `
   uniform sampler2D uElevation;
   uniform vec4 uDomain;
+  uniform sampler2D uFlats;
+  uniform vec4 uFlatsRect;
   // Sea level against mean sea level, tides included, m.
   uniform float uSeaLevel;
   // Seabed elevation in metres (x) and how far inside the data domain we are (y, 0..1).
@@ -66,9 +73,17 @@ const SEABED_GLSL = /* glsl */ `
     float h = textureLod(uElevation, clamp(uv, 0.0, 1.0), 0.0).r * 1000.0;
     return vec2(mix(-2500.0, min(h, 0.0), inside), inside);
   }
+  // The tidal flats (see TIDAL_FLATS): elevation about mean sea level in metres (x), and how much
+  // of the texel is flat (y, 0..1), which fades their edges into the bathymetry.
+  vec2 tidalFlat(vec2 xz) {
+    vec2 uv = (xz - uFlatsRect.xy) / uFlatsRect.zw;
+    if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec2(${TIDAL_FLATS.min.toFixed(1)}, 0.0);
+    float v = textureLod(uFlats, uv, 0.0).r * 255.0;
+    return vec2(${TIDAL_FLATS.min.toFixed(1)} + max(v - 1.0, 0.0) / 254.0 * ${(TIDAL_FLATS.max - TIDAL_FLATS.min).toFixed(1)}, min(v, 1.0));
+  }
 `
 
-function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) {
+function createMaterial(elevation: Elevation, flats: THREE.Texture, waves: WaveSimulation, n: number) {
   return new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     uniforms: {
@@ -76,6 +91,8 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
       ...clouds,
       uElevation: { value: elevation.texture },
       uDomain: { value: new THREE.Vector4(WORLD.minX, WORLD.minZ, WORLD.width, WORLD.depth) },
+      uFlats: { value: flats },
+      uFlatsRect: { value: new THREE.Vector4(FLATS_WORLD.minX, FLATS_WORLD.minZ, FLATS_WORLD.width, FLATS_WORLD.depth) },
       uDisp0: { value: waves.displacement[0] },
       uDisp1: { value: waves.displacement[1] },
       uDisp2: { value: waves.displacement[2] },
@@ -100,8 +117,13 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
       varying vec3 vWorld;
       varying vec2 vXZ;
       varying float vHeight;
+      // The fragment shader has a texture unit for the 40 m flats only if the 800 m bathymetry,
+      // which loses nothing by it, is read per vertex.
+      varying vec2 vBed;
       void main() {
         vec2 xz = position.xz + uOrigin;
+        vBed = seabed(xz);
+        vec2 flat_ = tidalFlat(xz);
         // Each cascade is read at the mip matching the local grid spacing, so far rings stay calm
         // instead of aliasing.
         float spacing = ${(GRID_GROWTH - 1).toFixed(4)} * (length(position.xz) + ${GRID_INNER.toFixed(3)});
@@ -109,7 +131,8 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
         vec3 d = textureLod(uDisp0, xz * uTileScale.x, lod.x).xyz + textureLod(uDisp1, xz * uTileScale.y, lod.y).xyz
           + textureLod(uDisp2, xz * uTileScale.z, lod.z).xyz;
         // Waves lie down in the shallows, so they never climb the coast.
-        d *= smoothstep(1.0, 20.0, uSeaLevel - seabed(xz).x);
+        // The bottom: the flats where they lie, else the bathymetry.
+        d *= smoothstep(1.0, 20.0, uSeaLevel - mix(vBed.x, flat_.x, flat_.y));
         vHeight = d.y;
         d *= ${WAVE_SCALE.toFixed(5)};
         // The tide raises and lowers the whole surface; land stands above its range (see Terrain).
@@ -136,6 +159,7 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
       varying vec3 vWorld;
       varying vec2 vXZ;
       varying float vHeight;
+      varying vec2 vBed;
 
       vec3 srgb(vec3 c) { return pow(c, vec3(2.2)); }
 
@@ -166,8 +190,11 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
         vec3 toCam = uCameraPos - vWorld;
         float dist = length(toCam);
         vec3 V = toCam / dist;
-        vec2 bed = seabed(vXZ);
-        float depth = uSeaLevel - bed.x;
+        vec2 bed = vBed;
+        vec2 flat_ = tidalFlat(vXZ);
+        float depth = uSeaLevel - mix(bed.x, flat_.x, flat_.y);
+        // Flats the tide has left: a few centimetres of fade at the water's edge.
+        float exposed = smoothstep(-0.03, 0.03, flat_.x - uSeaLevel) * flat_.y;
         float footprint = length(fwidth(vXZ));
 
         // Filtered wave slopes. Mip averaging flattens the mean slope with distance while the
@@ -221,8 +248,17 @@ function createMaterial(elevation: Elevation, waves: WaveSimulation, n: number) 
         // Surf shows its pattern only where the waves are resolved; farther out, where the pattern
         // is finer than a pixel and would shimmer from frame to frame, it is its average cover.
         float surf = clamp((uFoamThreshold + 0.9 - J) * 2.5, 0.0, 1.0) * breaking * resolved.x + breaking * 0.3 * (1.0 - resolved.x);
-        float foam = max(max(whitecap, surf), s0.w * resolved.x + s1.w * 0.7 * resolved.y + s2.w * 0.4 * resolved.z);
+        float foam = max(max(whitecap, surf), s0.w * resolved.x + s1.w * 0.7 * resolved.y + s2.w * 0.4 * resolved.z) * (1.0 - exposed);
         col = mix(col, 0.9 / PI * (downwelling + sun * max(dot(N, uSunDir), 0.0) * 0.3), foam * 0.9);
+
+        // Exposed silt: dark and glossy with water just off it, paler where it has drained, with a
+        // film of water mirroring the sky near the edge.
+        float drained = smoothstep(0.0, 1.2, flat_.x - uSeaLevel);
+        vec3 silt = mix(srgb(vec3(0.27, 0.27, 0.25)), srgb(vec3(0.45, 0.43, 0.39)), drained);
+        vec3 mud = silt / PI * (sun * max(uSunDir.y, 0.0) + skyIrradiance());
+        float film = (1.0 - drained) * (0.02 + 0.98 * pow(1.0 - max(V.y, 0.0), 5.0));
+        mud = mix(mud, groundEnvRadiance(reflect(-V, vec3(0.0, 1.0, 0.0)), 3.0), film * 0.6);
+        col = mix(col, mud, exposed);
 
         // Cartographic isobaths: 50 m on the shelf, 500 m on the slope, only in the map view.
         float lines = isobath(depth, 50.0) * (1.0 - smoothstep(150.0, 300.0, depth)) + isobath(depth, 500.0) * 0.8;
@@ -249,7 +285,26 @@ export function Ocean({ elevation, waveResolution }: { elevation: Elevation; wav
     return () => sim.dispose()
   }, [gl, waveResolution])
 
-  const material = useMemo(() => waves && createMaterial(elevation, waves, waveResolution), [elevation, waves, waveResolution])
+  // The flats load beside the sea, which draws without them until they come.
+  const [flats, setFlats] = useState<THREE.Texture>(NO_FLATS)
+  useEffect(() => {
+    let texture: THREE.Texture | undefined
+    new THREE.TextureLoader().load(
+      TIDAL_FLATS.url,
+      (t) => {
+        t.flipY = false
+        t.generateMipmaps = false
+        t.minFilter = THREE.LinearFilter
+        texture = t
+        setFlats(t)
+      },
+      undefined,
+      (error) => console.error('[scene] tidal flats failed to load:', error),
+    )
+    return () => texture?.dispose()
+  }, [])
+
+  const material = useMemo(() => waves && createMaterial(elevation, flats, waves, waveResolution), [elevation, flats, waves, waveResolution])
   useEffect(() => () => material?.dispose(), [material])
   const geometry = useMemo(oceanGeometry, [])
   useEffect(() => () => geometry.dispose(), [geometry])

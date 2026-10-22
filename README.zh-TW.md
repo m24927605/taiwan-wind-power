@@ -54,7 +54,8 @@ npx wrangler deploy --config worker/wrangler.jsonc
 | 洋流 | Open-Meteo Marine API | 範圍內 24 × 14 網格（間距約 36 公里），逐時，昨天到未來三天 |
 | 海況 | Open-Meteo Marine API | 風浪與湧浪（波高、週期、方向），同一套網格，依鏡頭所在位置取樣；即波譜的兩個峰 |
 | 實測浪高 | 中央氣象署開放資料（O-B0075-001、O-B0076-001） | 範圍內各資料浮標（2026 年 10 月共 24 個）的逐時示性波高，過去 48 小時。每筆觀測在約 30 公里、6 小時內把模式浪高往實測值縮放（取對數比例，最多 2 倍），所以浮標附近是實測的海況，越往未來越回到模式 |
-| 潮位 | Open-Meteo Marine API（MeteoFrance SMOC，約 8 公里） | 相對平均海平面的海面高度（含潮汐），同一套網格。整片海面依鏡頭所在位置的潮位升降，所以風機基礎上的水線會移動；數據面板顯示風場海域的潮位。陸地抬高到平均海平面以上 4 公尺，高於海峽最高的潮位。海床資料（每格約 800 公尺）太粗，畫不出潮間帶露出，所以不畫 |
+| 潮位 | Open-Meteo Marine API（MeteoFrance SMOC，約 8 公里） | 相對平均海平面的海面高度（含潮汐），同一套網格。整片海面依鏡頭所在位置的潮位升降，所以風機基礎上的水線會移動；數據面板顯示風場海域的潮位。陸地抬高到平均海平面以上 4 公尺，高於海峽最高的潮位 |
+| 潮灘 | 由 `scripts/build-tidal-flats.ts` 從 Copernicus Sentinel-2 L2A（AWS Earth Search）、氣象署潮位站與 Copernicus DEM GLO-30 推算 | 彰化與雲林的潮灘（93 平方公里），潮位低於其高程時露出。沒有現成的公開資料提供潮灘高程（Copernicus DEM 把潮灘壓平成海面；GTF30 與 Murray 的地圖只有範圍），所以比照澳洲 NIDEM 的方法推算：2023 年以來 128 個晴朗的 Sentinel-2 早晨，每張以 NDWI 判斷 40 公尺像素是否被水覆蓋；拍攝當下的潮位，由臺中港、麥寮、萡子寮潮位站近 30 天紀錄擬合的分潮推算；某像素的高程，就是最能區分它乾與濕的那個潮位。只保留開放海域不越過陸地就能到達、且 Copernicus DEM 為海面的潮灘，藉此排除海堤內的魚塭。輸出為 63 KB 的 PNG，每格約 40 公尺。Sentinel-2 約在上午 10:40 經過，這個時刻當地潮位從未低於約 −1.4 m，所以只在大潮最低潮（約 −2.3 m）才露出的潮灘不在其中 |
 | 實測潮位 | 中央氣象署開放資料（O-B0075-001） | 範圍內各潮位站（2026 年 10 月有 40 站回報）的逐時潮高，過去 48 小時。每站以自己的基準面量測，因此先扣除它與模式在重疊時段的平均差；剩下的部分（模式算錯的潮時與潮差，以及暴潮）在約 30 公里、6 小時內拉動模式潮位 |
 | 輪轂高度風速 | Open-Meteo Forecast API，100 m | 每座風場一個點；驅動偏航、轉速、出力與雲的飄移；白浪則依與鏡頭距離的平方反比混合各風場風速 |
 | 颱風 | 中央氣象署開放資料（W-C0034-005） | 所有活動中的熱帶氣旋：過去的逐時路徑與氣象署約四天的預報。鏡頭夠高時畫在雲層之上：路徑、虛線的預報路徑與中心落在其中機率 70% 的圓，以及場景時間當下的中心位置、七級風（15 m/s）與十級風（25 m/s）暴風圈和標示氣壓、最大風速的標籤 |
@@ -95,6 +96,8 @@ scripts/            離線資產流程（Node，執行一次）
   build-elevation.ts  Terrarium 圖磚 -> Terrarium 編碼 PNG 高程網格（海底地形）
   build-terrain.ts    z11 Terrarium -> 陸地網格 -> meshopt 簡化 -> 量化 GLB
   build-imagery.ts    Sentinel-2 cloudless + z11 法線 -> WebP 貼圖
+  build-tidal-flats.ts Sentinel-2 影像 + 潮位站 -> 潮灘高程 PNG（需要 CWA_API_KEY）
+  harmonics.ts        含交點修正的潮汐調和分析
   build-turbine.ts    程序化風機 -> meshopt LOD -> 量化、meshopt 壓縮的 GLB
   snapshot-weather.ts 一週內的 Open-Meteo 回應 -> 給沙盒環境用的內建備援資料
   build-artifact.ts   artifact 模式建置 -> 給 claude.ai 的單一內嵌頁面 + .gltf 模型
@@ -272,6 +275,8 @@ Potapooo 的海風、steaq 與 Snapper4298 的海鷗、eguaus 的風機聲，皆
 交叉淡化的循環並做過響度正規化。
 
 影像：Sentinel-2 cloudless 2024 – https://s2maps.eu，EOX IT Services GmbH（含修改過的 Copernicus
-Sentinel 2024 資料），授權 CC BY-NC-SA 4.0。高程：AWS Terrain Tiles。氣象：Open-Meteo；實測浪高、風速與潮位：中央氣象署開放資料；實測發電：台電開放資料。雲圖：向日葵 9 號（日本氣象廳）影像，經 NASA GIBS 提供。星表：耶魯亮星星表第 5 修訂版（Hoffleit &
+Sentinel 2024 資料），授權 CC BY-NC-SA 4.0。高程：AWS Terrain Tiles。氣象：Open-Meteo；實測浪高、風速與潮位：中央氣象署開放資料；實測發電：台電開放資料。潮灘：由 Copernicus
+Sentinel-2 2023–2026 資料與 Copernicus DEM GLO-30（© DLR e.V. 2010-2014 及 © Airbus Defence and
+Space GmbH 2014-2018，由歐盟與 ESA 依 COPERNICUS 計畫提供）推算。雲圖：向日葵 9 號（日本氣象廳）影像，經 NASA GIBS 提供。星表：耶魯亮星星表第 5 修訂版（Hoffleit &
 Warren 1991），取自 CDS。月面：Solar System Scope 貼圖（CC BY 4.0），依 NASA 影像製作。
 介紹影片旁白：Gemini TTS。

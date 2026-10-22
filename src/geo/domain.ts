@@ -40,6 +40,24 @@ export const DETAIL = {
 export const ELEVATION_SIZE = 1024
 export const ELEVATION_URL = 'data/taiwan-elevation.png'
 
+/**
+ * The tidal flats of the Changhua and Yunlin coast (scripts/build-tidal-flats.ts): elevation about
+ * mean sea level, one byte per texel over this box, row 0 at the north. 0 is no flat; 1 to 255
+ * span TIDAL_FLATS.min to TIDAL_FLATS.max metres. Read as a linear texture, no flat reads as
+ * TIDAL_FLATS.min, below any tide that comes, so blending at the flats' edges never uncovers sea.
+ */
+export const TIDAL_FLATS = {
+  west: 120.05,
+  east: 120.5,
+  south: 23.6,
+  north: 24.25,
+  /** Degrees per texel, about 40 m. */
+  step: 0.0004,
+  min: -2.5,
+  max: 2.5,
+  url: 'data/tidal-flats.png',
+} as const
+
 const ORIGIN_LON = (DOMAIN.west + DOMAIN.east) / 2
 const ORIGIN_LAT = (DOMAIN.south + DOMAIN.north) / 2
 const KM_PER_DEG_LAT = 110.574

@@ -59,7 +59,8 @@ For `wrangler dev`, put the key in `worker/.dev.vars` (`CWA_API_KEY=...`, git-ig
 | Ocean currents | Open-Meteo Marine API | 24 × 14 grid over the domain (about 36 km apart), hourly, yesterday through three days ahead |
 | Sea state | Open-Meteo Marine API | Wind sea and swell (height, period, direction) on the same grid, sampled where the camera is; the two peaks of the wave spectrum |
 | Measured waves | Central Weather Administration open data (O-B0075-001, O-B0076-001) | Hourly significant wave height at the moored buoys in the domain (24 in October 2026), the last 48 hours. Each measurement scales the modelled heights toward itself within about 30 km and 6 hours (log ratio, at most ×2 either way), so near the buoys the sea is the measured one and far into the forecast the model stands |
-| Sea level | Open-Meteo Marine API (MeteoFrance SMOC, about 8 km) | Sea level against mean sea level, tides included, on the same grid. The whole sea surface rises and falls with it at the camera, so the waterline moves on the turbine foundations; the metrics panel reads it at the farms. Land is lifted 4 m above mean sea level, beyond the strait's highest tides. The bathymetry (about 800 m a texel) is too coarse to show the tidal flats drying out, so they are not drawn |
+| Sea level | Open-Meteo Marine API (MeteoFrance SMOC, about 8 km) | Sea level against mean sea level, tides included, on the same grid. The whole sea surface rises and falls with it at the camera, so the waterline moves on the turbine foundations; the metrics panel reads it at the farms. Land is lifted 4 m above mean sea level, beyond the strait's highest tides |
+| Tidal flats | Derived by `scripts/build-tidal-flats.ts` from Copernicus Sentinel-2 L2A (AWS Earth Search), CWA tide gauges and Copernicus DEM GLO-30 | The Changhua and Yunlin flats (93 km²), which the sea uncovers below their elevation. No open dataset gives their elevation (Copernicus DEM flattens them into the sea; GTF30 and Murray's maps give extent only), so it is derived as Australia's NIDEM is: in each of the 128 clear Sentinel-2 mornings since 2023, NDWI tells which 40 m pixels were wet, and the tide then, predicted from constituents fitted to the Taichung, Mailiao and Bozailiao gauges' last 30 days, tells how high the water stood; a pixel's elevation is the tide that best splits its dry looks from its wet ones. Kept are the flats the open sea reaches without crossing land, where Copernicus DEM has sea, which leaves out the fish ponds behind the seawalls. A 63 KB PNG, about 40 m a texel. Sentinel-2 passes at about 10:40, when the tide here never falls below about -1.4 m, so the flats that only dry at the lowest spring tides (to about -2.3 m) are not in it |
 | Measured tide | CWA open data (O-B0075-001) | Hourly sea level at the tide gauges in the domain (40 reporting in October 2026), the last 48 hours. Each gauge reads against its own datum, so its mean offset from the model over the hours both cover is taken out; the rest (the timing and range of the tide where the model is wrong, and surges) pulls the modelled sea level within about 30 km and 6 hours |
 | Hub-height wind | Open-Meteo Forecast API, 100 m | One point per wind farm; drives yaw, rotor rpm, output and cloud drift, and the whitecaps, blended between farms by inverse squared distance from the camera |
 | Tropical cyclones | CWA open data (W-C0034-005) | Every active tropical cyclone: its hourly track so far and CWA's forecast, about four days ahead. Drawn above the clouds once the eye is high: the track, the forecast dashed with the circles its centre falls within at 70 % probability, and, at the scene time, the centre with its gale (15 m/s) and storm (25 m/s) radii and a label with pressure and maximum wind |
@@ -110,6 +111,8 @@ scripts/            offline asset pipeline (Node, run once)
   build-elevation.ts  Terrarium tiles -> Terrarium-encoded PNG elevation grid (bathymetry)
   build-terrain.ts    z11 Terrarium -> land mesh -> meshopt simplify -> quantized GLB
   build-imagery.ts    Sentinel-2 cloudless + z11 normals -> WebP textures
+  build-tidal-flats.ts Sentinel-2 scenes + tide gauges -> intertidal elevation PNG (needs CWA_API_KEY)
+  harmonics.ts        tidal harmonic analysis with nodal corrections
   build-turbine.ts    procedural turbine -> meshopt LOD -> quantized, meshopt-compressed GLB
   snapshot-weather.ts Open-Meteo responses a week ahead -> bundled fallback for sandboxed hosts
   build-artifact.ts   artifact-mode build -> one inlined page + .gltf models for claude.ai
@@ -344,6 +347,9 @@ rucisko, sea wind by Potapooo, gulls by steaq and Snapper4298, wind turbine by e
 
 Imagery: Sentinel-2 cloudless 2024 – https://s2maps.eu by EOX IT Services GmbH (contains modified
 Copernicus Sentinel data 2024), licensed CC BY-NC-SA 4.0. Elevation: AWS Terrain Tiles. Weather:
-Open-Meteo; measured waves, wind and tides: Central Weather Administration open data; measured output: Taipower open data. Clouds: Himawari-9 (JMA) imagery through NASA GIBS. Stars: Yale Bright Star Catalogue,
+Open-Meteo; measured waves, wind and tides: Central Weather Administration open data; measured output: Taipower open data. Tidal
+flats: derived from Copernicus Sentinel-2 data 2023-2026 and Copernicus DEM GLO-30 (© DLR e.V.
+2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European
+Union and ESA). Clouds: Himawari-9 (JMA) imagery through NASA GIBS. Stars: Yale Bright Star Catalogue,
 5th revised edition (Hoffleit & Warren 1991), from CDS. Moon: Solar System Scope textures (CC BY
 4.0), based on NASA imagery. Film narration: Gemini TTS.
