@@ -14,6 +14,10 @@ const SEA_VIEW_BELOW = 0.2
 const SEA_VIEW_PITCH = THREE.MathUtils.degToRad(-30)
 /** Tip per wheel notch (100 px of scroll), radians. */
 const SEA_VIEW_STEP = THREE.MathUtils.degToRad(4)
+/** Down there the wheel closes on a point one altitude ahead, so each notch covers a share of it. */
+const SEA_DOLLY_PIVOT = 1
+/** A drag down there turns the view about a point this close ahead of the eye, km. */
+const SEA_LOOK_PIVOT = 0.001
 
 export function CameraRig() {
   const ref = useRef<CameraControls>(null)
@@ -36,28 +40,46 @@ export function CameraRig() {
     }
   }, [])
 
-  // Zooming in on the sea ends looking down at the waves, as a descent over a farm does, rather
-  // than out at the horizon a turbine view faces, where the sky's reflection washes them out. The
-  // view turns in place, after the controls have taken the same wheel event.
+  // Low over the sea the controls orbit a point ahead of the eye that the rig moves before each
+  // gesture, in the capture phase so the controls act about it. A drag turns the view about a point
+  // a metre ahead, which is looking around: about one farther off, below the sea, raising the view
+  // would carry the eye under the surface, so it could not look up. The wheel closes on a point one
+  // altitude ahead, and zooming in also tips the view down to the waves nearby, where a descent over
+  // a farm arrives, rather than out at the horizon a turbine view faces, where the sky's reflection
+  // washes them out.
   useEffect(() => {
     const position = new THREE.Vector3()
     const target = new THREE.Vector3()
-    const onWheel = (e: WheelEvent) => {
-      const c = ref.current
-      if (!c || e.deltaY >= 0 || isFlying()) return
-      c.getPosition(position)
-      if (position.y > SEA_VIEW_BELOW) return
+    const pivot = (distance: number, pitch?: number, smooth = false) => {
+      const c = ref.current!
       const view = c.getTarget(target).sub(position)
-      const distance = view.length()
-      const pitch = Math.asin(view.y / distance)
-      if (pitch <= SEA_VIEW_PITCH) return
-      const tipped = Math.max(SEA_VIEW_PITCH, pitch + (SEA_VIEW_STEP * e.deltaY) / 100)
       const level = Math.hypot(view.x, view.z)
-      view.set((view.x / level) * Math.cos(tipped), Math.sin(tipped), (view.z / level) * Math.cos(tipped)).multiplyScalar(distance)
-      c.setTarget(position.x + view.x, position.y + view.y, position.z + view.z, true)
+      const p = pitch ?? Math.asin(view.y / view.length())
+      view.set((view.x / level) * Math.cos(p), Math.sin(p), (view.z / level) * Math.cos(p)).multiplyScalar(distance)
+      c.setTarget(position.x + view.x, position.y + view.y, position.z + view.z, smooth)
     }
-    canvas.addEventListener('wheel', onWheel, { passive: true })
-    return () => canvas.removeEventListener('wheel', onWheel)
+    const low = () => {
+      const c = ref.current
+      if (!c || isFlying()) return false
+      c.getPosition(position)
+      return position.y <= SEA_VIEW_BELOW
+    }
+    const onPointerDown = () => {
+      if (low()) pivot(SEA_LOOK_PIVOT)
+    }
+    const onWheel = (e: WheelEvent) => {
+      if (!low()) return
+      const view = ref.current!.getTarget(target).sub(position)
+      const pitch = Math.asin(view.y / view.length())
+      const tipped = e.deltaY >= 0 || pitch <= SEA_VIEW_PITCH ? pitch : Math.max(SEA_VIEW_PITCH, pitch + (SEA_VIEW_STEP * e.deltaY) / 100)
+      pivot(position.y * SEA_DOLLY_PIVOT, tipped, true)
+    }
+    canvas.addEventListener('pointerdown', onPointerDown, { capture: true })
+    canvas.addEventListener('wheel', onWheel, { capture: true, passive: true })
+    return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown, { capture: true })
+      canvas.removeEventListener('wheel', onWheel, { capture: true })
+    }
   }, [canvas])
 
   // Nothing can steer the view past the map's data: a pose that would show ground outside the
@@ -103,7 +125,8 @@ export function CameraRig() {
     <CameraControls
       ref={ref}
       makeDefault
-      minDistance={0.06}
+      // A metre, so a drag low over the sea can turn about a point just ahead of the eye (see above).
+      minDistance={0.001}
       maxDistance={650}
       dollyToCursor
       // At the closest distance the wheel carries the target on toward the cursor, so the view can
