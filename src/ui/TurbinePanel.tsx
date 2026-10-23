@@ -1,6 +1,6 @@
 import { generationAt } from '../data/weather'
 import { TURBINES, WIND_FARMS } from '../data/windfarms'
-import { farmDynamics } from '../scene/turbine/dynamics'
+import { farmDynamics, isTurning, turbineOutput, turbineRpm } from '../scene/turbine/dynamics'
 import { TURBINE, TURBINE_MODELS, powerAt, type TurbineModel } from '../scene/turbine/spec'
 import { worldToLonLat } from '../geo/domain'
 import { useT } from '../i18n'
@@ -46,16 +46,22 @@ export function TurbinePanel() {
   const wind = farmDynamics.wind[t.farm]
   const fromDeg = (((farmDynamics.windFrom[t.farm] * 180) / Math.PI) % 360 + 360) % 360
   const shutDown = farmDynamics.shutDown[t.farm] === 1
+  const output = turbineOutput(t)
   // On the shared curve, which is drawn for the 8 MW reference machine.
-  const { derateMs } = TURBINE_MODELS[farm.model]
-  const reference = powerAt(wind, farm.model, shutDown)
-  const output = reference * (farm.ratedMW / TURBINE.ratedPowerMW)
+  const reference = output * (TURBINE.ratedPowerMW / farm.ratedMW)
   const [lon, lat] = worldToLonLat(t.x, t.z)
-  const state = shutDown
-    ? tr.stateCutOut(TURBINE.restartMs)
-    : wind < TURBINE.cutInMs
-      ? tr.stateIdle
-      : wind > derateMs
+  const turning = Math.round(farmDynamics.running[t.farm] * farm.turbines)
+  // Where Taipower's output has it turning or stopped against the model, it says so.
+  const modelRuns = farmDynamics.modelled[t.farm] > 0
+  const state = !isTurning(t)
+    ? modelRuns || turning > 0
+      ? tr.stateStoppedMeasured
+      : shutDown
+        ? tr.stateCutOut(TURBINE.restartMs)
+        : tr.stateIdle
+    : !modelRuns
+      ? tr.stateRunningMeasured
+      : wind > TURBINE_MODELS[farm.model].derateMs
         ? tr.stateDerated
         : wind >= TURBINE.ratedMs
           ? tr.stateRated
@@ -83,6 +89,7 @@ export function TurbinePanel() {
       <div className="panel__state">
         <i className={output > 0 ? 'is-on' : ''} />
         {state}
+        <small>{tr.turning(turning, farm.turbines)}</small>
       </div>
       <dl className="panel__stats">
         <div>
@@ -103,7 +110,7 @@ export function TurbinePanel() {
         <div>
           <dt>{tr.rotorSpeed}</dt>
           <dd>
-            {farmDynamics.rpm[t.farm].toFixed(1)}
+            {turbineRpm(t).toFixed(1)}
             <small>rpm</small>
           </dd>
         </div>
@@ -117,7 +124,7 @@ export function TurbinePanel() {
       </dl>
       {generation && measured !== null && (
         <div className="panel__measured">
-          {tr.farmOutput(measured.toFixed(1), (output * farm.turbines).toFixed(1), formatTime(generation.at, tr.lang))}
+          {tr.farmOutput(measured.toFixed(1), farmDynamics.modelled[t.farm].toFixed(1), formatTime(generation.at, tr.lang))}
         </div>
       )}
       <div className="panel__chart">

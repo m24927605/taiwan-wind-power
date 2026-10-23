@@ -5,7 +5,7 @@ import { seaAt } from '../data/weather'
 import { TURBINES } from '../data/windfarms'
 import { atmosphere } from '../scene/atmosphere'
 import { TURBINE } from '../scene/turbine/spec'
-import { farmDynamics, turbineScale } from '../scene/turbine/dynamics'
+import { farmDynamics, turbineRpm, turbineScale } from '../scene/turbine/dynamics'
 import { useStore } from '../state'
 import { updateSound } from './engine'
 
@@ -47,7 +47,7 @@ export function Soundscape() {
         waveHeight,
         wind: farmDynamics.wind[turbine.farm],
         turbineDistance: Math.sqrt(best),
-        rotorRpm: farmDynamics.rpm[turbine.farm],
+        rotorRpm: turbineRpm(turbine),
         turbinePan: scratch.right.dot(scratch.to),
         day: atmosphere.uDay.value,
       },

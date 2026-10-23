@@ -7,7 +7,7 @@ import { useStore } from '../../state'
 import { PartCard } from '../../ui/PartCard'
 import { PARTS } from './parts'
 import { TURBINE } from './spec'
-import { farmDynamics, turbineScale } from './dynamics'
+import { farmDynamics, turbineScale, turbineSpin } from './dynamics'
 import { useTurbineModel } from './useTurbineModel'
 import { turbineMaterial } from './weathering'
 import { useT } from '../../i18n'
@@ -54,7 +54,7 @@ function Hero({ index }: { index: number }) {
     g.rotation.y = farmDynamics.yaw[turbine.farm]
     const scale = turbineScale(turbine.farm)
     g.scale.setScalar(scale)
-    rotor.current.rotation.z = -(farmDynamics.spin[turbine.farm] + turbine.phase)
+    rotor.current.rotation.z = -turbineSpin(turbine)
     progress.current = Math.min(1, progress.current + dt / CUT_SECONDS)
     const ease = 1 - Math.pow(1 - progress.current, 3)
     // Part labels only make sense while the nacelle fills a good part of the view (within 640 m of model).
@@ -105,7 +105,7 @@ function Hero({ index }: { index: number }) {
                 <b>{part.text[t.lang].name}</b>
                 {t.lang === 'zh' && <i>{part.text.en.name}</i>}
               </button>
-              {openPart === part.id && <PartCard part={part} farm={turbine.farm} onClose={() => setOpenPart(null)} />}
+              {openPart === part.id && <PartCard part={part} turbine={turbine} onClose={() => setOpenPart(null)} />}
             </div>
           </Html>
         ))}

@@ -19,6 +19,8 @@ const LOD_TINTS = [new THREE.Color(0x35e0ff), new THREE.Color(0xffb020)]
 const turbineUniforms = {
   uYaw: { value: farmDynamics.yaw },
   uSpin: { value: farmDynamics.spin },
+  uRunning: { value: farmDynamics.running },
+  uIdleSpin: { value: 0 },
   uHighlight: { value: -1 },
   uDebug: atmosphere.uDebug,
 }
@@ -40,8 +42,11 @@ function createMaterial(isRotor: boolean, lod: number): THREE.MeshPhysicalMateri
         attribute float aFarm;
         attribute float aPhase;
         attribute float aIndex;
+        attribute float aRank;
         uniform float uYaw[${WIND_FARMS.length}];
         uniform float uSpin[${WIND_FARMS.length}];
+        uniform float uRunning[${WIND_FARMS.length}];
+        uniform float uIdleSpin;
         uniform float uHighlight;
         uniform vec3 uHub;
         varying float vHighlight;
@@ -53,7 +58,7 @@ function createMaterial(isRotor: boolean, lod: number): THREE.MeshPhysicalMateri
         /* glsl */ `#include <beginnormal_vertex>
         int farm = int(aFarm + 0.5);
         mat3 yawM = rotY(uYaw[farm]);
-        mat3 spinM = rotZ(-(uSpin[farm] + aPhase));
+        mat3 spinM = rotZ(-((aRank < uRunning[farm] ? uSpin[farm] : uIdleSpin) + aPhase));
         ${isRotor ? 'objectNormal = spinM * objectNormal;' : ''}
         objectNormal = yawM * objectNormal;
         vHighlight = 1.0 - step(0.5, abs(aIndex - uHighlight));`,
@@ -86,6 +91,7 @@ interface Bucket {
   farm: THREE.InstancedBufferAttribute
   phase: THREE.InstancedBufferAttribute
   index: THREE.InstancedBufferAttribute
+  rank: THREE.InstancedBufferAttribute
 }
 
 function createBucket(geometry: THREE.BufferGeometry, material: THREE.Material): Bucket {
@@ -93,14 +99,16 @@ function createBucket(geometry: THREE.BufferGeometry, material: THREE.Material):
   const farm = new THREE.InstancedBufferAttribute(new Float32Array(COUNT), 1).setUsage(THREE.DynamicDrawUsage)
   const phase = new THREE.InstancedBufferAttribute(new Float32Array(COUNT), 1).setUsage(THREE.DynamicDrawUsage)
   const index = new THREE.InstancedBufferAttribute(new Float32Array(COUNT), 1).setUsage(THREE.DynamicDrawUsage)
+  const rank = new THREE.InstancedBufferAttribute(new Float32Array(COUNT), 1).setUsage(THREE.DynamicDrawUsage)
   g.setAttribute('aFarm', farm)
   g.setAttribute('aPhase', phase)
   g.setAttribute('aIndex', index)
+  g.setAttribute('aRank', rank)
   const mesh = new THREE.InstancedMesh(g, material, COUNT)
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   mesh.frustumCulled = false
   mesh.count = 0
-  return { mesh, farm, phase, index }
+  return { mesh, farm, phase, index, rank }
 }
 
 /** Aviation lights / far-field markers: one point per turbine at the nacelle roof. */
@@ -186,6 +194,7 @@ export function WindFarms() {
   useFrame(() => {
     const { hovered, selected } = useStore.getState()
     turbineUniforms.uHighlight.value = hovered ?? -1
+    turbineUniforms.uIdleSpin.value = farmDynamics.idleSpin
     ;(lights.material as THREE.ShaderMaterial).uniforms.uExaggeration.value = turbineView.exaggeration
 
     if (frame.current++ % REBUCKET_EVERY !== 0) return
@@ -209,13 +218,14 @@ export function WindFarms() {
         b.farm.setX(k, t.farm)
         b.phase.setX(k, t.phase)
         b.index.setX(k, t.index)
+        b.rank.setX(k, t.rank)
       }
     }
     buckets.forEach((pair, lod) => {
       for (const b of pair) {
         b.mesh.count = counts[lod]
         b.mesh.instanceMatrix.needsUpdate = true
-        b.farm.needsUpdate = b.phase.needsUpdate = b.index.needsUpdate = true
+        b.farm.needsUpdate = b.phase.needsUpdate = b.index.needsUpdate = b.rank.needsUpdate = true
       }
     })
     lodCounts[0] = counts[0]

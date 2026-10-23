@@ -1,7 +1,7 @@
-import { WIND_FARMS } from '../../data/windfarms'
-import { hourIndex, windAt, type Weather } from '../../data/weather'
+import { WIND_FARMS, type Turbine } from '../../data/windfarms'
+import { hourIndex, measuredOutputAt, windAt, type Weather } from '../../data/weather'
 import { lonLatToWorld } from '../../geo/domain'
-import { TURBINE, TURBINE_MODELS, powerAt, rpmAt } from './spec'
+import { TURBINE, TURBINE_MODELS, powerAt, rpmAt, windForOutput } from './spec'
 
 const n = WIND_FARMS.length
 
@@ -46,13 +46,20 @@ export const farmDynamics = {
   windFrom: new Float32Array(n),
   /** Nacelle yaw about +Y, radians (rotor faces into the wind). */
   yaw: new Float32Array(n),
-  /** Accumulated rotor angle, radians. */
+  /** Accumulated rotor angle of the turning turbines, radians. */
   spin: new Float32Array(n),
+  /** Rotor speed of the turning turbines, rpm. */
   rpm: new Float32Array(n),
-  /** Per-turbine output, MW. */
+  /** Output of each turning turbine, MW. */
   power: new Float32Array(n),
-  /** 1 while the farm is shut down by high wind. */
+  /** Share of the farm's turbines turning, 0 to 1, in whole turbines (see Turbine.rank). */
+  running: new Float32Array(n),
+  /** The farm's output by the model alone, MW. */
+  modelled: new Float32Array(n),
+  /** 1 while the model has the farm shut down by high wind. */
   shutDown: new Uint8Array(n),
+  /** Accumulated rotor angle of the idling turbines, radians. */
+  idleSpin: 0,
   initialised: false,
 }
 
@@ -80,8 +87,22 @@ function shutDownAt(weather: Weather, farm: number, t: number, speed: number): b
   return false
 }
 
+/**
+ * A farm's turbines as Taipower measured them, MW for the farm: as many turning as the output
+ * calls for, each making what the model gives it, or, where the model has none turning or too
+ * little wind for the output, its rated power or the share that makes up the output.
+ */
+function asMeasured(farm: number, mw: number, modelPower: number): { running: number; power: number } {
+  const { turbines, ratedMW } = WIND_FARMS[farm]
+  if (mw <= 0) return { running: 0, power: 0 }
+  const power = Math.max(modelPower > 0 ? modelPower : ratedMW, mw / turbines)
+  return { running: mw / power / turbines, power }
+}
+
 export function advanceFarms(weather: Weather, time: number, dt: number) {
+  const ease = farmDynamics.initialised ? Math.min(1, dt * 0.5) : 1
   for (let f = 0; f < n; f++) {
+    const { turbines, model, ratedMW } = WIND_FARMS[f]
     const { speed, fromRad } = windAt(weather, f, time)
     const target = Math.PI - fromRad
     farmDynamics.wind[f] = speed
@@ -91,14 +112,43 @@ export function advanceFarms(weather: Weather, time: number, dt: number) {
       : target
     const shutDown = shutDownAt(weather, f, time, speed)
     farmDynamics.shutDown[f] = shutDown ? 1 : 0
-    const { model, ratedMW } = WIND_FARMS[f]
-    const rpm = rpmAt(speed, model, shutDown)
-    farmDynamics.rpm[f] = farmDynamics.initialised ? farmDynamics.rpm[f] + (rpm - farmDynamics.rpm[f]) * Math.min(1, dt * 0.5) : rpm
+    const modelPower = powerAt(speed, model, shutDown) * (ratedMW / TURBINE.ratedPowerMW)
+    farmDynamics.modelled[f] = modelPower * turbines
+
+    // Near Taipower's reading the farm turns as measured, fading back to the model either side.
+    let output = modelPower * turbines
+    let running = modelPower > 0 ? 1 : 0
+    let rpm = rpmAt(speed, model, shutDown)
+    const measured = measuredOutputAt(weather, f, time)
+    if (measured) {
+      const m = asMeasured(f, measured.mw, modelPower)
+      output += (measured.mw - output) * measured.weight
+      running += (m.running - running) * measured.weight
+      // Turning where the model has them stopped: as fast as their output says.
+      if (m.running > 0 && modelPower === 0) rpm = rpmAt(windForOutput(m.power / ratedMW), model)
+    }
+    // Whole turbines, and enough of them to make the output within their rating.
+    const turning = output > 0 ? Math.min(turbines, Math.max(Math.round(running * turbines), Math.ceil(output / ratedMW - 1e-6))) : 0
+    farmDynamics.running[f] = turning / turbines
+    farmDynamics.power[f] = turning ? output / turning : 0
+    farmDynamics.rpm[f] = turning ? farmDynamics.rpm[f] + (rpm - farmDynamics.rpm[f]) * ease : TURBINE.idleRpm
     farmDynamics.spin[f] = (farmDynamics.spin[f] + (farmDynamics.rpm[f] / 60) * Math.PI * 2 * dt) % (Math.PI * 2)
-    farmDynamics.power[f] = powerAt(speed, model, shutDown) * (ratedMW / TURBINE.ratedPowerMW)
   }
+  farmDynamics.idleSpin = (farmDynamics.idleSpin + (TURBINE.idleRpm / 60) * Math.PI * 2 * dt) % (Math.PI * 2)
   farmDynamics.initialised = true
 }
+
+/** Whether a turbine is turning: the farm's running share picks its turbines by rank. */
+export const isTurning = (t: Turbine) => t.rank < farmDynamics.running[t.farm]
+
+/** A turbine's rotor speed, rpm. */
+export const turbineRpm = (t: Turbine) => (isTurning(t) ? farmDynamics.rpm[t.farm] : TURBINE.idleRpm)
+
+/** A turbine's output, MW. */
+export const turbineOutput = (t: Turbine) => (isTurning(t) ? farmDynamics.power[t.farm] : 0)
+
+/** A turbine's rotor angle, radians. */
+export const turbineSpin = (t: Turbine) => (isTurning(t) ? farmDynamics.spin[t.farm] : farmDynamics.idleSpin) + t.phase
 
 const farmXZ = WIND_FARMS.map((f) => lonLatToWorld(f.lon, f.lat))
 
@@ -119,6 +169,6 @@ export function windNear(x: number, z: number): number {
 
 export function totalOutputMW(): number {
   let total = 0
-  for (let f = 0; f < n; f++) total += farmDynamics.power[f] * WIND_FARMS[f].turbines
+  for (let f = 0; f < n; f++) total += farmDynamics.power[f] * farmDynamics.running[f] * WIND_FARMS[f].turbines
   return total
 }

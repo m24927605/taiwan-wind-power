@@ -644,6 +644,12 @@ small {
   background: var(--signal);
 }
 
+.panel__state small {
+  margin-left: auto;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
 .panel__state i.is-on {
   background: #6dffa8;
   box-shadow: 0 0 10px #6dffa8;

@@ -1,7 +1,7 @@
-import { WIND_FARMS } from '../../data/windfarms'
+import { WIND_FARMS, type Turbine } from '../../data/windfarms'
 import type { Lang } from '../../i18n'
 import { compass8 } from '../../ui/format'
-import { farmDynamics } from './dynamics'
+import { farmDynamics, turbineOutput, turbineRpm } from './dynamics'
 import { TURBINE } from './spec'
 
 /** Medium-speed drivetrain: two planetary stages between the main shaft and the generator. */
@@ -26,10 +26,8 @@ export interface Part {
   /** Leader line height (px), staggered so neighbouring labels never overlap. */
   lift: number
   text: Record<Lang, PartText>
-  live: (farm: number, lang: Lang) => Reading
+  live: (turbine: Turbine, lang: Lang) => Reading
 }
-
-const farmOutputMW = (farm: number) => farmDynamics.power[farm]
 
 export const PARTS: Part[] = [
   {
@@ -56,9 +54,9 @@ export const PARTS: Part[] = [
         ],
       },
     },
-    live: (farm, lang) => ({
+    live: (turbine, lang) => ({
       label: lang === 'zh' ? '主軸轉速' : 'Shaft speed',
-      value: farmDynamics.rpm[farm].toFixed(1),
+      value: turbineRpm(turbine).toFixed(1),
       unit: 'rpm',
     }),
   },
@@ -86,9 +84,9 @@ export const PARTS: Part[] = [
         ],
       },
     },
-    live: (farm, lang) => ({
+    live: (turbine, lang) => ({
       label: lang === 'zh' ? '輸出轉速' : 'Output speed',
-      value: (farmDynamics.rpm[farm] * GEAR_RATIO).toFixed(0),
+      value: (turbineRpm(turbine) * GEAR_RATIO).toFixed(0),
       unit: 'rpm',
     }),
   },
@@ -116,9 +114,9 @@ export const PARTS: Part[] = [
         ],
       },
     },
-    live: (farm, lang) => ({
+    live: (turbine, lang) => ({
       label: lang === 'zh' ? '目前出力' : 'Output now',
-      value: farmOutputMW(farm).toFixed(2),
+      value: turbineOutput(turbine).toFixed(2),
       unit: 'MW',
     }),
   },
@@ -146,11 +144,11 @@ export const PARTS: Part[] = [
         ],
       },
     },
-    live: (farm, lang) => {
-      const rated = WIND_FARMS[farm].ratedMW
+    live: (turbine, lang) => {
+      const rated = WIND_FARMS[turbine.farm].ratedMW
       return {
         label: lang === 'zh' ? '負載率' : 'Load',
-        value: ((farmOutputMW(farm) / rated) * 100).toFixed(0),
+        value: ((turbineOutput(turbine) / rated) * 100).toFixed(0),
         unit: '%',
       }
     },
@@ -179,8 +177,8 @@ export const PARTS: Part[] = [
         ],
       },
     },
-    live: (farm, lang) => {
-      const deg = ((((farmDynamics.windFrom[farm] * 180) / Math.PI) % 360) + 360) % 360
+    live: (turbine, lang) => {
+      const deg = ((((farmDynamics.windFrom[turbine.farm] * 180) / Math.PI) % 360) + 360) % 360
       return {
         label: lang === 'zh' ? '機艙朝向' : 'Nacelle heading',
         value: `${compass8(deg, lang)} ${deg.toFixed(0)}°`,

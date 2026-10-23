@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import type { Turbine } from '../data/windfarms'
 import type { Part } from '../scene/turbine/parts'
 import { useT } from '../i18n'
 import { useTicker } from './format'
@@ -7,10 +8,10 @@ import { useTicker } from './format'
 const SIDE_PANEL_PX = 340
 
 /** Explainer for one nacelle component, opened from its 3D label. */
-export function PartCard({ part, farm, onClose }: { part: Part; farm: number; onClose: () => void }) {
+export function PartCard({ part, turbine, onClose }: { part: Part; turbine: Turbine; onClose: () => void }) {
   useTicker(250)
   const t = useT()
-  const reading = part.live(farm, t.lang)
+  const reading = part.live(turbine, t.lang)
   const text = part.text[t.lang]
   // In Chinese the English name rides along as a kicker; in English the name stands alone.
   const kicker = t.lang === 'zh' ? part.text.en.name : null

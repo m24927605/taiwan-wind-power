@@ -207,6 +207,22 @@ export function generationAt(weather: Weather, t: number): Weather['generation']
 }
 
 /**
+ * How far either side of Taipower's reading it still steers the farms, s. Taipower publishes no
+ * history or forecast, so the farms turn as measured while the reading holds and fade back to the
+ * model by this time.
+ */
+const ASSIMILATE_S = 3 * 3600
+
+/** What Taipower measured at a farm, MW, and how much it counts at time t (0 to 1); null where it does not. */
+export function measuredOutputAt(weather: Weather, farm: number, t: number): { mw: number; weight: number } | null {
+  const g = weather.generation
+  const mw = g?.mw[farm] ?? null
+  if (!g || mw === null) return null
+  const weight = Math.min(1, (ASSIMILATE_S - Math.abs(t - g.at)) / (ASSIMILATE_S - GENERATION_HOLD_S))
+  return weight > 0 ? { mw, weight } : null
+}
+
+/**
  * A cyclone at time t, interpolated along its track and on into the forecast; null before its
  * first fix or after its last. Radii a fix does not give are taken as absent.
  */

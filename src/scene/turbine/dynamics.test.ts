@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { WIND_FARMS } from '../../data/windfarms'
 import { windOnly } from '../../test/weather'
-import { advanceFarms, farmDynamics } from './dynamics'
+import { advanceFarms, farmDynamics, totalOutputMW } from './dynamics'
 import { TURBINE } from './spec'
 
 const HOUR = 3600
@@ -50,5 +50,56 @@ describe('high-wind shutdown', () => {
     expect(farmDynamics.power[RIDES]).toBe(0)
     advanceFarms(storm, 3 * HOUR, 1e3)
     expect(farmDynamics.rpm[RIDES]).toBeCloseTo(TURBINE.idleRpm)
+  })
+})
+
+describe("Taipower's output", () => {
+  const farm = WIND_FARMS[STOPS]
+  const capacity = farm.turbines * farm.ratedMW
+  /** The storm, with Taipower reading the given output at hour 1 (26 m/s, the model shut down). */
+  const measuring = (mw: (number | null)[]) => ({ ...storm, generation: { at: HOUR, mw } })
+  const output = (f: number) => farmDynamics.power[f] * farmDynamics.running[f] * WIND_FARMS[f].turbines
+  const turningAt = (weather: ReturnType<typeof measuring>, hour: number, f: number) => {
+    advanceFarms(weather, hour * HOUR, 1)
+    return Math.round(farmDynamics.running[f] * WIND_FARMS[f].turbines)
+  }
+
+  beforeEach(() => {
+    farmDynamics.initialised = false
+  })
+
+  it('turns as many turbines as it calls for where the model has the farm stopped', () => {
+    const weather = measuring(WIND_FARMS.map((_, f) => (f === STOPS ? capacity / 4 : null)))
+    expect(turningAt(weather, 1, STOPS)).toBe(Math.round(farm.turbines / 4))
+    expect(output(STOPS)).toBeCloseTo(capacity / 4, 3)
+    expect(farmDynamics.rpm[STOPS]).toBeGreaterThan(TURBINE.idleRpm)
+  })
+
+  it('stops a farm the model has running when it measures nothing', () => {
+    const weather = measuring(WIND_FARMS.map((_, f) => (f === RIDES ? 0 : null)))
+    expect(turningAt(weather, 1, RIDES)).toBe(0)
+    expect(output(RIDES)).toBe(0)
+    expect(farmDynamics.modelled[RIDES]).toBeGreaterThan(0)
+  })
+
+  it('holds while the reading does, then fades back to the model', () => {
+    const weather = measuring(WIND_FARMS.map((_, f) => (f === RIDES ? 0 : null)))
+    advanceFarms(weather, 1 * HOUR, 1)
+    const modelled = farmDynamics.modelled[RIDES]
+    advanceFarms(weather, 1.5 * HOUR, 1)
+    expect(output(RIDES)).toBe(0)
+    advanceFarms(weather, (1 + 3.75 / 2) * HOUR, 1)
+    expect(output(RIDES)).toBeCloseTo(farmDynamics.modelled[RIDES] / 2, 3)
+    expect(modelled).toBeGreaterThan(0)
+    advanceFarms(weather, 4 * HOUR + 1, 1)
+    expect(output(RIDES)).toBeCloseTo(farmDynamics.modelled[RIDES], 3)
+  })
+
+  it('sums to what Taipower measured where it covers every farm', () => {
+    const mw = WIND_FARMS.map((f, i) => (i % 2 ? 0 : (f.turbines * f.ratedMW) / 3))
+    advanceFarms(measuring(mw), 1 * HOUR, 1)
+    const total = mw.reduce((a, b) => a + b, 0)
+    expect(totalOutputMW()).toBeGreaterThan(total * 0.97)
+    expect(totalOutputMW()).toBeLessThan(total * 1.03)
   })
 })

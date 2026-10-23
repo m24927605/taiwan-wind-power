@@ -42,6 +42,11 @@ export interface Turbine {
   z: number
   /** Rotor phase offset in radians so neighbouring rotors are not in lockstep. */
   phase: number
+  /**
+   * Its place in the farm's order of turning, 0 to 1, shuffled across the array: when only part of
+   * a farm turns, the turbines ranked below that share do.
+   */
+  rank: number
 }
 
 function mulberry32(seed: number) {
@@ -52,6 +57,16 @@ function mulberry32(seed: number) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
+}
+
+/** 0 to n - 1 in random order (Fisher-Yates). */
+function shuffled(n: number, rand: () => number): number[] {
+  const order = Array.from({ length: n }, (_, i) => i)
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[order[i], order[j]] = [order[j], order[i]]
+  }
+  return order
 }
 
 function layout(): Turbine[] {
@@ -65,6 +80,8 @@ function layout(): Turbine[] {
     // Rows run along the heading; columns are staggered by half a spacing like real arrays.
     const along = [Math.sin(h), -Math.cos(h)]
     const across = [Math.cos(h), Math.sin(h)]
+    // A generator of its own, apart from the one placing the turbines.
+    const ranks = shuffled(farm.turbines, mulberry32(f + 1))
     for (let k = 0; k < farm.turbines; k++) {
       const r = Math.floor(k / cols)
       const c = k % cols
@@ -76,6 +93,7 @@ function layout(): Turbine[] {
         x: cx + along[0] * a + across[0] * b,
         z: cz + along[1] * a + across[1] * b,
         phase: rand() * Math.PI * 2,
+        rank: (ranks[k] + 0.5) / farm.turbines,
       })
     }
   })

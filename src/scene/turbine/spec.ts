@@ -64,3 +64,13 @@ export function rpmAt(windMs: number, model: TurbineModel, shutDown = false): nu
   const rpm = ratedRpm * Math.min(1, 0.35 + (0.65 * (windMs - cutInMs)) / (ratedMs - cutInMs))
   return idleRpm + (rpm - idleRpm) * derating(windMs, model)
 }
+
+/**
+ * The wind at which a turbine below rated makes the given share of its rated output, inverting the
+ * cubic curve; rated wind for a full share.
+ */
+export function windForOutput(share: number): number {
+  const { cutInMs, ratedMs } = TURBINE
+  if (share >= 1) return ratedMs
+  return Math.cbrt(Math.max(share, 0) * (ratedMs ** 3 - cutInMs ** 3) + cutInMs ** 3)
+}
