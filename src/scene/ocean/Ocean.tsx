@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import type { Elevation } from '../../data/elevation'
 import { seaAt, seaLevelAt, type SeaComponent } from '../../data/weather'
@@ -8,7 +8,6 @@ import { useStore } from '../../state'
 import { ATMOSPHERE_GLSL, atmosphere } from '../atmosphere'
 import { CLOUDS_GLSL, clouds } from '../clouds'
 import { windNear } from '../turbine/dynamics'
-import { SPRAY_BELOW, createSprayMaterial, sprayGeometry } from './Spray'
 import { CASCADES, WaveSimulation, type SeaState } from './WaveSimulation'
 
 /** Until the forecast arrives: a moderate north-east monsoon sea over a long swell. */
@@ -342,15 +341,9 @@ export function Ocean({ elevation, waveResolution }: { elevation: Elevation; wav
   useEffect(() => () => material?.dispose(), [material])
   const geometry = useMemo(oceanGeometry, [])
   useEffect(() => () => geometry.dispose(), [geometry])
-  const spray = useMemo(() => material && createSprayMaterial(waves!, material.uniforms.uTileScale.value), [material, waves])
-  useEffect(() => () => spray?.dispose(), [spray])
-  const sprayPoints = useMemo(sprayGeometry, [])
-  useEffect(() => () => sprayPoints.dispose(), [sprayPoints])
-  const size = useThree((s) => s.size)
-  const sprayRef = useRef<THREE.Points>(null)
 
   useFrame(({ camera }, dt) => {
-    if (!waves || !material || !spray) return
+    if (!waves || !material) return
     const { weather, time } = useStore.getState()
     let sea = DEFAULT_SEA
     let level = 0
@@ -385,23 +378,8 @@ export function Ocean({ elevation, waveResolution }: { elevation: Elevation; wav
     u.uMicroVariance.value = 0.002 + 0.0012 * u10
     // The grid follows the eye in whole metres so its vertices do not swim through the waves.
     u.uOrigin.value.set(Math.round(camera.position.x * 1000) / 1000, Math.round(camera.position.z * 1000) / 1000)
-
-    const s = spray.uniforms
-    s.uEye.value.set(camera.position.x, camera.position.z)
-    s.uSeaLevel.value = level
-    s.uWind.value.set(u.uFoamWind.value.x, u.uFoamWind.value.y, u10)
-    s.uFoamThreshold.value = u.uFoamThreshold.value
-    // Spindrift starts in a gale, Beaufort 8, and fills the air by a storm.
-    s.uAmount.value = camera.position.y < SPRAY_BELOW ? THREE.MathUtils.smoothstep(u10, 14, 26) : 0
-    if (sprayRef.current) sprayRef.current.visible = s.uAmount.value > 0
-    s.uPixelsPerRadian.value = size.height / (2 * Math.tan(THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov) / 2))
   }, -10)
 
-  if (!material || !spray) return null
-  return (
-    <>
-      <mesh geometry={geometry} material={material} frustumCulled={false} name="ocean" />
-      <points ref={sprayRef} geometry={sprayPoints} material={spray} frustumCulled={false} name="spray" />
-    </>
-  )
+  if (!material) return null
+  return <mesh geometry={geometry} material={material} frustumCulled={false} name="ocean" />
 }

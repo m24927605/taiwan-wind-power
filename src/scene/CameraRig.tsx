@@ -1,10 +1,10 @@
 import { CameraControls } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { WORLD } from '../geo/domain'
 import { useStore } from '../state'
-import { advanceFlight, cancelFlight, flyToOverview, isFlying, overviewPose, registerControls, viewInsideDomain } from './camera'
+import { advanceFlight, cancelFlight, floorAt, flyToOverview, isFlying, overviewPose, registerControls, viewInsideDomain } from './camera'
 
 /** Within this distance (km) of the overview pose the camera counts as being at the overview. */
 const OVERVIEW_TOLERANCE = 40
@@ -28,6 +28,7 @@ export function CameraRig() {
   // The last pose whose view lay inside the domain.
   const valid = useRef({ position: new THREE.Vector3(), target: new THREE.Vector3(), set: false })
   const overview = useRef({ aspect: 0, position: new THREE.Vector3() })
+  const lifted = useMemo(() => new THREE.Vector3(), [])
 
   useEffect(() => {
     const c = ref.current
@@ -94,6 +95,18 @@ export function CameraRig() {
     const c = ref.current
     if (!c) return
     advanceFlight(Math.min(dt, 0.1))
+    // An eye that sinks below the floor is lifted back onto it with what it looks at, so it keeps
+    // looking the same way: turning about a point just ahead of it (see above) dips it a little, and
+    // a pose refused for that would leave a view down on the waves unable to look up.
+    const p = camera.position
+    const floor = floorAt(p.x, p.z)
+    if (p.y < floor && !isFlying()) {
+      // Moving the target carries the eye with it and leaves a turn in progress running.
+      const t = c.getTarget(lifted, false)
+      // A millimetre over, so rounding cannot leave it under and the pose be refused.
+      c.moveTo(t.x, t.y + floor - p.y + 1e-6, t.z, false)
+      c.update(0)
+    }
     const v = valid.current
     if (viewInsideDomain(camera)) {
       v.position.copy(camera.position)
