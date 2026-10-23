@@ -43,7 +43,7 @@ export function Typhoons() {
   return (
     <group name="typhoons">
       {cyclones.map((c) => (
-        <Typhoon key={c.nameEn} cyclone={c} />
+        <Typhoon key={c.number} cyclone={c} />
       ))}
     </group>
   )
@@ -90,7 +90,7 @@ function Typhoon({ cyclone }: { cyclone: Cyclone }) {
     gale.current.scale.setScalar(now.r15 ?? 1)
     storm.current.visible = now.r25 !== null
     storm.current.scale.setScalar(now.r25 ?? 1)
-    label.current.textContent = t.typhoon(t.lang === 'zh' ? cyclone.name : cyclone.nameEn, Math.round(now.pressure), now.wind === null ? null : Math.round(now.wind))
+    label.current.textContent = t.typhoon(t.lang === 'zh' ? cyclone.name : cyclone.nameEn, cyclone.number, Math.round(now.pressure), now.wind === null ? null : Math.round(now.wind))
   })
 
   return (

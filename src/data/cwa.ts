@@ -170,8 +170,11 @@ export interface CycloneFix {
 }
 
 export interface Cyclone {
-  name: string
-  nameEn: string
+  /** CWA's tropical depression number, which a cyclone keeps once named. */
+  number: string
+  /** The name in Chinese and in English; null for a depression not yet named. */
+  name: string | null
+  nameEn: string | null
   /** Analysed fixes, oldest first. */
   track: CycloneFix[]
   /** Forecast fixes from the latest analysis, earliest first. */
@@ -195,7 +198,8 @@ interface RawCyclones {
   records: {
     TropicalCyclones?: {
       TropicalCyclone: {
-        TyphoonName: string
+        CwaTdNo: string
+        TyphoonName?: string
         CwaTyphoonName?: string
         AnalysisData: { Fix: RawFix[] }
         ForecastData?: { Fix: RawFix[] }
@@ -225,8 +229,9 @@ function fix(raw: RawFix): CycloneFix {
 export async function fetchCyclones(key: string): Promise<Cyclone[]> {
   const data = await getCwa<RawCyclones>(CYCLONES, key)
   return (data.records.TropicalCyclones?.TropicalCyclone ?? []).map((c) => ({
-    name: c.CwaTyphoonName ?? c.TyphoonName,
-    nameEn: c.TyphoonName,
+    number: c.CwaTdNo,
+    name: c.CwaTyphoonName ?? null,
+    nameEn: c.TyphoonName ?? null,
     track: c.AnalysisData.Fix.map(fix).sort((a, b) => a.t - b.t),
     forecast: (c.ForecastData?.Fix ?? []).map(fix).sort((a, b) => a.t - b.t),
   }))

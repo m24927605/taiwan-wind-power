@@ -144,7 +144,7 @@ describe('cycloneAt', () => {
     r70,
   })
   // Analysed at hours 0 and 1, forecast from hour 1 (repeating the last fix) to hour 7.
-  const cyclone: Cyclone = { name: '測試', nameEn: 'TEST', track: [fix(0, 125, 140), fix(1, 124.8, 140)], forecast: [fix(1, 124.8, 140, 0), fix(7, 124.2, 120, 30)] }
+  const cyclone: Cyclone = { number: '1', name: '測試', nameEn: 'TEST', track: [fix(0, 125, 140), fix(1, 124.8, 140)], forecast: [fix(1, 124.8, 140, 0), fix(7, 124.2, 120, 30)] }
 
   it('follows the track, then the forecast', () => {
     expect(cycloneAt(cyclone, 0.5 * HOUR)!.lon).toBeCloseTo(124.9)
