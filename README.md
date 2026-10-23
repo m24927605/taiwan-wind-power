@@ -73,9 +73,11 @@ For `wrangler dev`, put the key in `worker/.dev.vars` (`CWA_API_KEY=...`, git-ig
 
 The timeline scrubs across the full 96-hour window, and the play button runs it as a time-lapse.
 Turbine output comes from a cubic power curve (cut-in 3 m/s, rated 12 m/s), scaled to each
-farm's rating. In high wind the turbines ride through rather than stop at once: from 25 m/s output
-eases down, at 30 m/s they shut down, and they restart only once the wind is back below 22 m/s.
-These are generic values, since the farms' own controller settings are not public. Farm counts and ratings follow public project data. Turbine
+farm's rating. High wind is met as each farm's machine is set up: the Vestas V174 farms ease
+output down from 25 m/s to a stop at 31 m/s (Vestas' high-wind operation), and every other farm
+shuts down at 25 m/s, Siemens Gamesa's ride-through being an option Taipower's output shows these
+farms without. All restart only once the wind is back below 22 m/s. The farms' own controller
+settings are not public. Farm counts and ratings follow public project data. Turbine
 coordinates are an approximate array layout, and the UI says so.
 
 ## Interaction

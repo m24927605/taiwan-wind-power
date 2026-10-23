@@ -1,7 +1,7 @@
 import { WIND_FARMS } from '../../data/windfarms'
 import { hourIndex, windAt, type Weather } from '../../data/weather'
 import { lonLatToWorld } from '../../geo/domain'
-import { TURBINE, powerAt, rpmAt } from './spec'
+import { TURBINE, TURBINE_MODELS, powerAt, rpmAt } from './spec'
 
 const n = WIND_FARMS.length
 
@@ -61,13 +61,15 @@ function shortestAngle(from: number, to: number): number {
 }
 
 /**
- * Whether a farm stands shut down at time t, given its wind there: once the wind reaches cut-out it
+ * Whether a farm stands shut down at time t, given its wind there: once the wind reaches its
+ * machine's cut-out it
  * stays down until the wind falls below the restart speed. Worked out from the hourly wind rather
  * than carried from frame to frame, so it holds wherever the timeline is scrubbed to. The wind is
  * interpolated linearly, so between samples it never goes beyond them and the samples suffice.
  */
 function shutDownAt(weather: Weather, farm: number, t: number, speed: number): boolean {
-  const { cutOutMs, restartMs } = TURBINE
+  const { cutOutMs } = TURBINE_MODELS[WIND_FARMS[farm].model]
+  const { restartMs } = TURBINE
   if (speed >= cutOutMs) return true
   if (speed < restartMs) return false
   const w = weather.wind[farm]
@@ -89,10 +91,11 @@ export function advanceFarms(weather: Weather, time: number, dt: number) {
       : target
     const shutDown = shutDownAt(weather, f, time, speed)
     farmDynamics.shutDown[f] = shutDown ? 1 : 0
-    const rpm = rpmAt(speed, shutDown)
+    const { model, ratedMW } = WIND_FARMS[f]
+    const rpm = rpmAt(speed, model, shutDown)
     farmDynamics.rpm[f] = farmDynamics.initialised ? farmDynamics.rpm[f] + (rpm - farmDynamics.rpm[f]) * Math.min(1, dt * 0.5) : rpm
     farmDynamics.spin[f] = (farmDynamics.spin[f] + (farmDynamics.rpm[f] / 60) * Math.PI * 2 * dt) % (Math.PI * 2)
-    farmDynamics.power[f] = powerAt(speed, shutDown) * (WIND_FARMS[f].ratedMW / TURBINE.ratedPowerMW)
+    farmDynamics.power[f] = powerAt(speed, model, shutDown) * (ratedMW / TURBINE.ratedPowerMW)
   }
   farmDynamics.initialised = true
 }
