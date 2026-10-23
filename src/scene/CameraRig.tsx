@@ -18,6 +18,8 @@ const SEA_VIEW_STEP = THREE.MathUtils.degToRad(4)
 const SEA_DOLLY_PIVOT = 1
 /** A drag down there turns the view about a point this close ahead of the eye, km. */
 const SEA_LOOK_PIVOT = 0.001
+/** ...and at this share of the orbiting speed, which would swing a look around too fast. */
+const SEA_LOOK_SPEED = 0.35
 
 export function CameraRig() {
   const ref = useRef<CameraControls>(null)
@@ -65,7 +67,11 @@ export function CameraRig() {
       return position.y <= SEA_VIEW_BELOW
     }
     const onPointerDown = () => {
-      if (low()) pivot(SEA_LOOK_PIVOT)
+      const c = ref.current
+      if (!c) return
+      const looking = low()
+      if (looking) pivot(SEA_LOOK_PIVOT)
+      c.azimuthRotateSpeed = c.polarRotateSpeed = looking ? SEA_LOOK_SPEED : 1
     }
     const onWheel = (e: WheelEvent) => {
       if (!low()) return

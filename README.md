@@ -191,9 +191,13 @@ spaced in proportion to their radius, about 10 m apart under the eye and out pas
 at the mip matching its spacing. Another writes mipmapped (slope, slope², foam): mip filtering
 keeps the slope variance that distance averages away for the Beckmann glitter, and foam is
 injected where the surface folds and decays over seconds, so whitecaps leave trails. Breaking
-crests come from the combined Jacobian of all cascades. Waves are drawn life size, like the
-turbines around a camera near the sea, and they lie down in the shallows so they never climb the
-coast.
+crests come from the combined Jacobian of all cascades. Up close the foam cover is drawn as
+streaks of bubbles drawn out downwind with clear water between, not a translucent haze; farther
+out, where that pattern is finer than a pixel, as its average. In a gale (10 m wind from 14 m/s)
+spray is torn off the breaking crests around the eye: stateless GPU points in plumes, each born
+where the same wave fields show a crest breaking, carried downwind and falling back within a
+second or two. Waves are drawn life size, like the turbines around a camera near the sea, and
+they lie down in the shallows so they never climb the coast.
 
 **Kuroshio on the GPU.** Particle state (domain uv, age, lifetime) ping-pongs between RGBA32F
 render targets in `GPUComputationRenderer`. The current field is a 24 × 14 RG16F texture with
