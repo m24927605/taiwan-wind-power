@@ -75,6 +75,9 @@ export function CameraRig() {
       minDistance={0.06}
       maxDistance={650}
       dollyToCursor
+      // At the closest distance the wheel carries the target on toward the cursor, so the view can
+      // go on down from a nacelle to the waves instead of stopping 60 m short of what it orbits.
+      infinityDolly
       smoothTime={0.35}
       draggingSmoothTime={0.12}
     />
