@@ -1239,7 +1239,12 @@ small {
   pointer-events: auto;
 }
 
-.attribution:hover {
+.attribution a {
+  color: inherit;
+  white-space: nowrap;
+}
+
+.attribution a:hover {
   color: var(--text-dim);
 }
 

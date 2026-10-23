@@ -93,6 +93,7 @@ const zh = {
   legendLights: '風機航空警示燈',
   attributionLong: '衛星影像 Sentinel-2 cloudless 2024 © EOX IT Services GmbH（含 Copernicus Sentinel 資料）· CC BY-NC-SA 4.0',
   attributionShort: '影像 © EOX Sentinel-2 cloudless · CC BY-NC-SA 4.0',
+  contact: '聯絡',
 
   engineeringMode: '工程師模式 · E',
   lodTitle: '風機 LOD 分桶（每 3 幀以視錐 + 距離重排）',
@@ -213,6 +214,7 @@ const en: Messages = {
   legendLights: 'Turbine aviation lights',
   attributionLong: 'Imagery Sentinel-2 cloudless 2024 © EOX IT Services GmbH (contains modified Copernicus Sentinel data) · CC BY-NC-SA 4.0',
   attributionShort: 'Imagery © EOX Sentinel-2 cloudless · CC BY-NC-SA 4.0',
+  contact: 'Contact',
 
   engineeringMode: 'Engineering mode · E',
   lodTitle: 'Turbine LOD buckets (re-sorted by frustum and distance every 3 frames)',

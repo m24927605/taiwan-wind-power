@@ -1,5 +1,7 @@
 import { useT } from '../i18n'
 
+const CONTACT = 'm24927605@gmail.com'
+
 export function Legend() {
   const t = useT()
   return (
@@ -14,10 +16,16 @@ export function Legend() {
           <span>{t.legendLights}</span>
         </div>
       </div>
-      <a className="attribution" href="https://s2maps.eu" target="_blank" rel="noreferrer">
-        <span className="attribution__long">{t.attributionLong}</span>
-        <span className="attribution__short">{t.attributionShort}</span>
-      </a>
+      <div className="attribution">
+        <a href="https://s2maps.eu" target="_blank" rel="noreferrer">
+          <span className="attribution__long">{t.attributionLong}</span>
+          <span className="attribution__short">{t.attributionShort}</span>
+        </a>
+        {' · '}
+        <a href={`mailto:${CONTACT}`}>
+          {t.contact} {CONTACT}
+        </a>
+      </div>
     </>
   )
 }
