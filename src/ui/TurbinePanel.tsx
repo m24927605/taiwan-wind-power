@@ -53,6 +53,8 @@ export function TurbinePanel() {
   const turning = Math.round(farmDynamics.running[t.farm] * farm.turbines)
   // Where Taipower's output has it turning or stopped against the model, it says so.
   const modelRuns = farmDynamics.modelled[t.farm] > 0
+  // Stopped by high wind or as measured, rather than becalmed: the rotor idles, feathered.
+  const idling = !isTurning(t) && (shutDown || modelRuns || turning > 0)
   const state = !isTurning(t)
     ? modelRuns || turning > 0
       ? tr.stateStoppedMeasured
@@ -91,6 +93,7 @@ export function TurbinePanel() {
         {state}
         <small>{tr.turning(turning, farm.turbines)}</small>
       </div>
+      {idling && <p className="panel__note">{tr.idleNote}</p>}
       <dl className="panel__stats">
         <div>
           <dt>{tr.hubWindShort}</dt>

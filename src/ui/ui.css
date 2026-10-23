@@ -722,6 +722,13 @@ small {
   transition: cx 0.4s, cy 0.4s;
 }
 
+.panel__note {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
 .panel__foot {
   margin-top: 10px;
   font-size: 10.5px;
@@ -1219,6 +1226,21 @@ small {
   height: 4px;
   border-radius: 2px;
   background: linear-gradient(90deg, #0d4d8c, #5fe1ff, #e6fbff);
+}
+
+/* An idling rotor, at the scene's idle speed of 1.5 rpm. */
+.legend__idle {
+  width: 14px;
+  height: 14px;
+  margin: 0 21px;
+  fill: var(--text-dim);
+  animation: idle 40s linear infinite;
+}
+
+@keyframes idle {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .legend__blink {
