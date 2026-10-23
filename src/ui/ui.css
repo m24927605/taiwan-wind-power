@@ -45,10 +45,20 @@ small {
 
 /* ---------------------------------------------------------------- title */
 
-.title {
+.rail {
   position: absolute;
   top: max(22px, env(safe-area-inset-top));
-  left: max(28px, env(safe-area-inset-left));
+  left: max(24px, env(safe-area-inset-left));
+  bottom: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  pointer-events: none;
+}
+
+.title {
+  margin-left: 4px;
   pointer-events: none;
   text-shadow: 0 2px 24px rgba(0, 0, 0, 0.6);
 }
@@ -131,10 +141,18 @@ small {
   flex-direction: column;
   gap: 12px;
   pointer-events: none;
+  container-type: size;
 }
 
-.side > * {
+.side > :not(.legend) {
   pointer-events: auto;
+}
+
+/* Too short a column for the full metrics and the legend: the legend gives way. */
+@container (max-height: 560px) {
+  .side > .legend {
+    display: none;
+  }
 }
 
 .metrics {
@@ -454,11 +472,12 @@ small {
 
 /* ---------------------------------------------------------------- toolbar */
 
+/* Centred in the room the title leaves. */
 .toolbar {
-  position: absolute;
-  left: max(24px, env(safe-area-inset-left));
-  top: 50%;
-  transform: translateY(-50%);
+  position: relative;
+  flex: none;
+  margin: auto 0;
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -987,6 +1006,19 @@ small {
   opacity: 0;
 }
 
+/* Moved out from under a card: a leader from the cyclone's centre to the label. */
+.typhoon-label.is-shifted::before {
+  content: '';
+  position: absolute;
+  left: calc(50% + var(--leader-x));
+  top: calc(50% + var(--leader-y));
+  width: var(--leader-len);
+  height: 1px;
+  background: rgba(255, 143, 122, 0.7);
+  transform: rotate(var(--leader-angle));
+  transform-origin: 0 0;
+}
+
 .farm-label {
   display: flex;
   align-items: center;
@@ -1217,10 +1249,11 @@ small {
 
 /* ---------------------------------------------------------------- legend */
 
+/* At the foot of the right-hand column, clear of the timeline. */
 .legend {
-  position: absolute;
-  right: max(24px, env(safe-area-inset-right));
-  bottom: max(34px, calc(env(safe-area-inset-bottom) + 10px));
+  flex: none;
+  margin-top: auto;
+  align-self: flex-end;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1326,7 +1359,12 @@ small {
 }
 
 @media (max-width: 760px) {
+  .rail {
+    display: contents;
+  }
+
   .title {
+    position: absolute;
     left: 16px;
     top: max(16px, env(safe-area-inset-top));
   }
@@ -1373,6 +1411,11 @@ small {
     display: none;
   }
 
+  /* The turbine panel takes the metrics' place rather than lying over them. */
+  .metrics--compact {
+    display: none;
+  }
+
   .timeline {
     bottom: max(30px, calc(env(safe-area-inset-bottom) + 20px));
     flex-direction: column;
@@ -1388,9 +1431,10 @@ small {
   }
 
   .toolbar {
+    position: absolute;
     left: 16px;
     top: calc(max(16px, env(safe-area-inset-top)) + 66px);
-    transform: none;
+    margin: 0;
     flex-direction: row;
   }
 

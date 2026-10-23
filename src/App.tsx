@@ -5,7 +5,7 @@ import { Scene } from './scene/Scene'
 import { useStore } from './state'
 import { EngineeringPanel } from './ui/EngineeringPanel'
 import { Metrics, Title } from './ui/Hud'
-import { Legend } from './ui/Legend'
+import { Attribution, Legend } from './ui/Legend'
 import { Timeline } from './ui/Timeline'
 import { OverviewReturn, ToolHint, Toolbar } from './ui/Toolbar'
 import { TurbinePanel } from './ui/TurbinePanel'
@@ -36,19 +36,23 @@ export default function App() {
     <main className="app">
       <Scene />
       <div className="ui">
-        <Title />
-        {/* The right-hand column: the metrics, and the turbine panel below them. */}
+        {/* The left-hand column: the title, and the tools below it. */}
+        <div className="rail">
+          <Title />
+          <Toolbar />
+        </div>
+        {/* The right-hand column: the metrics, the turbine panel below them, and the legend. */}
         <div className="side">
           <Metrics />
           <TurbinePanel />
+          <Legend />
         </div>
-        <Toolbar />
         <div className="top-center">
           <OverviewReturn />
           <ToolHint />
         </div>
         <EngineeringPanel />
-        <Legend />
+        <Attribution />
         <Timeline />
       </div>
     </main>

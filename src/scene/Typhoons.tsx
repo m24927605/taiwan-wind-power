@@ -35,6 +35,42 @@ const at = (f: CycloneFix): [number, number, number] => {
   return [x, AREA_LIFT, z]
 }
 
+/** The cards a label must not hide under, and its clearance from them, px. */
+const PANELS = '.side > *, .legend, .timeline'
+const GAP = 10
+
+/**
+ * Moves a label out from under the cards over the scene: to the left of a card if it stays on
+ * screen there, otherwise above it, with a leader back to the centre. `shift` holds the offset
+ * already applied, so the label is measured where it would sit unmoved.
+ */
+function clearOfPanels(el: HTMLElement, shift: { x: number; y: number }) {
+  const r = el.getBoundingClientRect()
+  const left = r.left - shift.x
+  const top = r.top - shift.y
+  let x = 0
+  let y = 0
+  for (const panel of document.querySelectorAll(PANELS)) {
+    const b = panel.getBoundingClientRect()
+    const l = left + x
+    const t = top + y
+    if (b.width === 0 || l >= b.right + GAP || l + r.width <= b.left - GAP || t >= b.bottom + GAP || t + r.height <= b.top - GAP) continue
+    if (b.left - GAP - r.width >= GAP) x = b.left - GAP - r.width - left
+    else y = b.top - GAP - r.height - top
+  }
+  shift.x = x
+  shift.y = y
+  el.style.translate = `${x}px ${y}px`
+  el.classList.toggle('is-shifted', x !== 0 || y !== 0)
+  // The leader runs from the centre to the label's nearest edge.
+  const len = Math.hypot(x, y)
+  const inside = len && Math.min(Math.abs(r.width / 2 / (x || 1e-9)), Math.abs(r.height / 2 / (y || 1e-9))) * len
+  el.style.setProperty('--leader-x', `${-x}px`)
+  el.style.setProperty('--leader-y', `${-y}px`)
+  el.style.setProperty('--leader-len', `${Math.max(0, len - inside)}px`)
+  el.style.setProperty('--leader-angle', `${Math.atan2(y, x)}rad`)
+}
+
 /** One empty list, so the store selector returns the same value while there is no weather. */
 const NONE: Cyclone[] = []
 
@@ -71,6 +107,7 @@ function Typhoon({ cyclone }: { cyclone: Cyclone }) {
   const gale = useRef<THREE.Group>(null)
   const storm = useRef<THREE.Group>(null)
   const label = useRef<HTMLDivElement>(null)
+  const shift = useRef({ x: 0, y: 0 })
   const line = (i: number) => (l: unknown) => {
     lines.current[i] = l as Line2 | null
   }
@@ -85,6 +122,7 @@ function Typhoon({ cyclone }: { cyclone: Cyclone }) {
     centre.current.visible = now !== null && fade > 0
     label.current.classList.toggle('is-hidden', now === null || fade < 0.5)
     if (!now) return
+    clearOfPanels(label.current, shift.current)
     centre.current.position.set(...at(now))
     gale.current.visible = now.r15 !== null
     gale.current.scale.setScalar(now.r15 ?? 1)
