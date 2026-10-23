@@ -37,14 +37,17 @@ export default function App() {
       <Scene />
       <div className="ui">
         <Title />
-        <Metrics />
+        {/* The right-hand column: the metrics, and the turbine panel below them. */}
+        <div className="side">
+          <Metrics />
+          <TurbinePanel />
+        </div>
         <Toolbar />
         <div className="top-center">
           <OverviewReturn />
           <ToolHint />
         </div>
         <EngineeringPanel />
-        <TurbinePanel />
         <Legend />
         <Timeline />
       </div>

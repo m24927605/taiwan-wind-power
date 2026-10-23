@@ -54,6 +54,8 @@ export function Metrics() {
   useTicker(250)
   const weather = useStore((s) => s.weather)
   const error = useStore((s) => s.error)
+  // With a turbine open below, only the headline stays, leaving the column to its panel.
+  const compact = useStore((s) => s.selected !== null)
   const t = useT()
   if (error) return <aside className="metrics glass metrics--error">{t.loadFailed(error)}</aside>
   if (!weather) return <aside className="metrics glass metrics--loading">{t.loading}</aside>
@@ -75,7 +77,7 @@ export function Metrics() {
   const generation = generationAt(weather, time)
 
   return (
-    <aside className="metrics glass">
+    <aside className={`metrics glass${compact ? ' metrics--compact' : ''}`}>
       <div className="metrics__label">{t.outputLabel}</div>
       <div className="metrics__hero">
         {formatNumber(output)}

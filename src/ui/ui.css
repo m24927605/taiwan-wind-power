@@ -121,12 +121,30 @@ small {
 
 /* ---------------------------------------------------------------- metrics */
 
-.metrics {
+.side {
   position: absolute;
   top: max(20px, env(safe-area-inset-top));
   right: max(24px, env(safe-area-inset-right));
+  bottom: 108px;
   width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.side > * {
+  pointer-events: auto;
+}
+
+.metrics {
+  flex: none;
   padding: 18px 20px 16px;
+}
+
+.metrics--compact .metrics__grid,
+.metrics--compact .metrics__sources {
+  display: none;
 }
 
 .metrics--loading,
@@ -560,11 +578,8 @@ small {
 /* ---------------------------------------------------------------- turbine panel */
 
 .panel {
-  position: absolute;
-  right: max(24px, env(safe-area-inset-right));
-  top: 290px;
-  width: 300px;
-  max-height: calc(100vh - 290px - 108px);
+  position: relative;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
   padding: 18px 20px;
@@ -1335,7 +1350,12 @@ small {
     letter-spacing: 0.2em;
   }
 
+  .side {
+    display: contents;
+  }
+
   .metrics {
+    position: absolute;
     top: auto;
     right: 16px;
     left: 16px;
@@ -1401,6 +1421,7 @@ small {
   }
 
   .panel {
+    position: absolute;
     top: auto;
     left: 16px;
     right: 16px;
