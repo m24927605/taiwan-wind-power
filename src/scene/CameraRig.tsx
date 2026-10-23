@@ -8,10 +8,17 @@ import { advanceFlight, cancelFlight, flyToOverview, isFlying, overviewPose, reg
 
 /** Within this distance (km) of the overview pose the camera counts as being at the overview. */
 const OVERVIEW_TOLERANCE = 40
+/** Below this altitude (km), zooming in also tips the view down toward the waves nearby. */
+const SEA_VIEW_BELOW = 0.2
+/** How far down the view tips, radians below the horizon: the pitch a farm view arrives at. */
+const SEA_VIEW_PITCH = THREE.MathUtils.degToRad(-30)
+/** Tip per wheel notch (100 px of scroll), radians. */
+const SEA_VIEW_STEP = THREE.MathUtils.degToRad(4)
 
 export function CameraRig() {
   const ref = useRef<CameraControls>(null)
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
+  const canvas = useThree((s) => s.gl.domElement)
   // The last pose whose view lay inside the domain.
   const valid = useRef({ position: new THREE.Vector3(), target: new THREE.Vector3(), set: false })
   const overview = useRef({ aspect: 0, position: new THREE.Vector3() })
@@ -28,6 +35,30 @@ export function CameraRig() {
       registerControls(null)
     }
   }, [])
+
+  // Zooming in on the sea ends looking down at the waves, as a descent over a farm does, rather
+  // than out at the horizon a turbine view faces, where the sky's reflection washes them out. The
+  // view turns in place, after the controls have taken the same wheel event.
+  useEffect(() => {
+    const position = new THREE.Vector3()
+    const target = new THREE.Vector3()
+    const onWheel = (e: WheelEvent) => {
+      const c = ref.current
+      if (!c || e.deltaY >= 0 || isFlying()) return
+      c.getPosition(position)
+      if (position.y > SEA_VIEW_BELOW) return
+      const view = c.getTarget(target).sub(position)
+      const distance = view.length()
+      const pitch = Math.asin(view.y / distance)
+      if (pitch <= SEA_VIEW_PITCH) return
+      const tipped = Math.max(SEA_VIEW_PITCH, pitch + (SEA_VIEW_STEP * e.deltaY) / 100)
+      const level = Math.hypot(view.x, view.z)
+      view.set((view.x / level) * Math.cos(tipped), Math.sin(tipped), (view.z / level) * Math.cos(tipped)).multiplyScalar(distance)
+      c.setTarget(position.x + view.x, position.y + view.y, position.z + view.z, true)
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: true })
+    return () => canvas.removeEventListener('wheel', onWheel)
+  }, [canvas])
 
   // Nothing can steer the view past the map's data: a pose that would show ground outside the
   // domain snaps back to the last one that did not. Scripted flights keep inside by their path.
