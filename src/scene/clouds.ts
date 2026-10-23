@@ -7,8 +7,8 @@ import { SATELLITE_BOUNDS, worldExtent } from '../geo/domain'
 // on the GPU. CLOUDS_GLSL builds on ATMOSPHERE_GLSL (it lights the clouds through the same air) and
 // is shared by the cloud pass, the sky, the reflection environment and, for cloud shadows, the
 // terrain and the sea. Himawari scans (data/satellite.ts) say where the cloud is, how tall it grows
-// and where the cirrus lies; the noise only breaks their 2 km pixels into cloud. Without a scan
-// there is no cloud.
+// and where the cirrus and the overcast of deep convection lie; the noise only breaks their 2 km
+// pixels into cloud. Without a scan there is no cloud.
 
 export const CLOUD_BOTTOM = 0.9
 export const CLOUD_TOP = 2.9
@@ -62,10 +62,11 @@ const float CLOUD_EXT = 45.0;
 
 float remap(float v, float a, float b, float c, float d) { return c + (v - a) / (b - a) * (d - c); }
 
-// Satellite cloud at a world position: low cover, top height within the layer, high cover.
-vec3 satelliteCloud(vec2 xz) {
+// Satellite cloud at a world position: low cover, top height within the layer, high cover, deep
+// convection.
+vec4 satelliteCloud(vec2 xz) {
   vec2 uv = (xz - uSatBounds.xy) * uSatBounds.zw;
-  return mix(textureLod(uSatA, uv, 0.0).rgb, textureLod(uSatB, uv, 0.0).rgb, uSatBlend);
+  return mix(textureLod(uSatA, uv, 0.0), textureLod(uSatB, uv, 0.0), uSatBlend);
 }
 
 // How much of the scan holds here: it fades out at the edge of the scanned area, beyond the widest
@@ -102,9 +103,9 @@ vec2 cloudSegment(vec3 d, float h) {
   return vec2(max(min(tb, tt), 0.0), max(tb, tt));
 }
 
-// detail, 0..1, is how much fine erosion to apply: full near the eye, fading out with distance so
-// no edge sweeps across the clouds as the camera climbs.
-float cloudDensity(vec3 p, float detail) {
+// The cloud's shape before fine erosion. Shadows need no more, and leaving the detail volume out of
+// them keeps the sea's shader within the GPU's sixteen textures.
+float cloudBase(vec3 p) {
   float h01 = (p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM);
   if (h01 <= 0.0 || h01 >= 1.0) return 0.0;
   vec2 q = p.xz - uCloudOffset;
@@ -113,7 +114,7 @@ float cloudDensity(vec3 p, float detail) {
   // Explicit LOD: ray-march samples jump between neighbouring pixels, so derivatives mean nothing.
   vec3 weather = textureLod(uCloudWeather, q / 52.0, 0.0).rgb;
   // Warp the lookup by a few kilometres so edges follow the noise rather than the 2 km pixels.
-  vec3 sat = satelliteCloud(p.xz + (weather.gb - 0.5) * 6.0);
+  vec3 sat = satelliteCloud(p.xz + (weather.gb - 0.5) * 6.0).rgb;
   // The noise varies the cover inside the satellite's cloud and adds none where it saw clear sky.
   // A trace of cover would only break into specks that wink in and out, so it starts from 15%.
   float cover = smoothstep(0.15, 0.4, sat.r) * sat.r;
@@ -123,9 +124,17 @@ float cloudDensity(vec3 p, float detail) {
   vec4 s = textureLod(uCloudShape, vec3(q.x, p.y, q.y) / 4.8, 0.0);
   float fbm = s.g * 0.625 + s.b * 0.25 + s.a * 0.125;
   float base = remap(s.r, fbm - 1.0, 1.0, 0.0, 1.0) * profile;
-  base = remap(base, 1.0 - coverage, 1.0, 0.0, 1.0) * coverage;
+  return clamp(remap(base, 1.0 - coverage, 1.0, 0.0, 1.0) * coverage, 0.0, 1.0);
+}
+
+// detail, 0..1, is how much fine erosion to apply: full near the eye, fading out with distance so
+// no edge sweeps across the clouds as the camera climbs.
+float cloudDensity(vec3 p, float detail) {
+  float base = cloudBase(p);
   if (base <= 0.0) return 0.0;
   if (detail > 0.0) {
+    float h01 = (p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM);
+    vec2 q = p.xz - uCloudOffset;
     vec3 dn = textureLod(uCloudDetail, vec3(q.x, p.y - uTime * 0.0015, q.y) / 0.72, 0.0).rgb;
     float dfbm = dn.r * 0.625 + dn.g * 0.25 + dn.b * 0.125;
     // Wispy at the base, billowing toward the top.
@@ -200,18 +209,37 @@ vec4 marchClouds(vec3 cam, vec3 dir, float tLimit, int maxSteps, int lightSteps,
   return vec4(L, T);
 }
 
-// Wind-combed cirrus on a flat sheet at 8.5 km.
-vec3 applyCirrus(vec3 col, vec3 d, vec3 cam) {
-  if (uCloudsReady < 0.5 || uSatWeight <= 0.0 || cam.y > 8.5 || d.y < 0.004) return col;
-  float t = min((8.5 - cam.y) / d.y, 400.0);
+/** Height of the high cloud sheet, km. */
+const float HIGH_CLOUD = 8.5;
+
+// The high cloud on a flat sheet, as radiance and opacity along d from cam, from below or above:
+// wind-combed cirrus, and the dense overcast of deep convection (a typhoon's eyewall and rain
+// bands), white from above and dark beneath. From the overview the cirrus thins like the clouds
+// below; the overcast mostly stays, since it is the weather worth seeing from there.
+vec4 highCloud(vec3 d, vec3 cam) {
+  if (uCloudsReady < 0.5 || uSatWeight <= 0.0) return vec4(0.0);
+  bool above = cam.y > HIGH_CLOUD;
+  if (above ? d.y > -0.004 : d.y < 0.004) return vec4(0.0);
+  float t = min((HIGH_CLOUD - cam.y) / d.y, 400.0);
   vec2 xz = cam.xz + d.xz * t;
   vec2 uv = (xz - uCloudOffset * 1.6) / 70.0;
   float n = textureLod(uCloudWeather, uv * vec2(1.0, 3.0), 0.0).b * 0.6 + textureLod(uCloudWeather, uv * vec2(3.0, 11.0) + 0.37, 0.0).b * 0.4;
-  float cirrus = satelliteCloud(xz).b * satelliteWeight(xz);
-  float a = clamp((n - 1.0 + cirrus * 0.62) * 2.6, 0.0, 0.85) * smoothstep(0.004, 0.09, d.y);
+  vec4 sat = satelliteCloud(xz);
+  float w = satelliteWeight(xz) * smoothstep(0.004, 0.09, abs(d.y));
+  float cirrus = clamp((n - 1.0 + sat.b * 0.62) * 2.6, 0.0, 0.85) * w * cloudFade();
+  float deep = sat.a * mix(0.88, 1.0, n) * w * (1.0 - 0.2 * smoothstep(15.0, 120.0, cam.y));
+  float a = max(cirrus, deep);
+  if (a <= 0.0) return vec4(0.0);
   float c = dot(d, uSunDir);
-  vec3 light = sunIrradiance(8.5) * (0.6 * hg(0.75, c) + 0.4 * hg(-0.1, c)) * 0.5 + skyIrradiance() / PI * 0.9;
-  return mix(col, light, a);
+  vec3 thin = sunIrradiance(HIGH_CLOUD) * (0.6 * hg(0.75, c) + 0.4 * hg(-0.1, c)) * 0.5 + skyIrradiance() / PI * 0.9;
+  vec3 sun = sunIrradiance(HIGH_CLOUD) * max(uSunDir.y, 0.0);
+  vec3 thick = above ? (sun + skyIrradiance()) * 0.8 / PI : (sun * 0.04 + skyIrradiance() * 0.3) / PI;
+  return vec4(mix(thin, thick, deep / a), a);
+}
+
+vec3 applyHighCloud(vec3 col, vec3 d, vec3 cam) {
+  vec4 h = highCloud(d, cam);
+  return mix(col, h.rgb, h.a);
 }
 
 // Sunlight reaching a point on the ground through the cloud layer.
@@ -226,9 +254,12 @@ float cloudShadow(vec3 p) {
     float h = mix(CLOUD_BOTTOM, CLOUD_TOP, (float(i) + 0.5) / float(taps));
     vec3 q = p + uSunDir * ((h - p.y) / sy);
     q.y = h;
-    od += cloudDensity(q, 0.0);
+    od += cloudBase(q);
   }
   float shadow = exp(-od * CLOUD_EXT * (CLOUD_TOP - CLOUD_BOTTOM) / float(taps) / sy * 0.6);
+  // The overcast of deep convection lets little through.
+  vec2 high = p.xz + uSunDir.xz * ((HIGH_CLOUD - p.y) / sy);
+  shadow *= 1.0 - 0.8 * satelliteCloud(high).a * satelliteWeight(high);
   // Thinned like the clouds themselves from the map view (CloudPass), so the map stays readable.
   return mix(1.0, shadow, cloudFade());
 }

@@ -126,7 +126,7 @@ const GROUND_ENV = /* glsl */ `
   void main() {
     vec3 d = skyDir(gl_FragCoord.xy / vec2(256.0, 128.0));
     vec3 col = texelFetch(uGroundSky, ivec2(gl_FragCoord.xy), 0).rgb;
-    col = applyCirrus(col, d, uOrigin);
+    col = applyHighCloud(col, d, uOrigin);
     if (d.y > -0.01) {
       float depth;
       vec4 c = marchClouds(uOrigin, d, 1e9, 30, 3, false, 0.5, depth);

@@ -6,7 +6,8 @@ import type { Elevation } from './elevation'
 // every ten minutes, about half an hour behind real time, over SATELLITE_BOUNDS: everything the
 // camera can see. The clean longwave infrared window (band 13, 10.4 µm) is decoded back to
 // brightness temperature with the layer's own colour map: cloud is what is colder than the clear
-// surface, its top is higher the colder it is, and the coldest is cirrus or anvil. By day the red
+// surface, its top is higher the colder it is, the coldest is cirrus or anvil, and the coldest of
+// all is the overcast of deep convection, a typhoon's eyewall and rain bands. By day the red
 // visible band (band 3) adds low cloud the infrared alone misses. Where there is no scan (hours
 // not observed yet, or GIBS out of reach) there are no clouds.
 
@@ -40,13 +41,19 @@ const VIS_MIN_SUN = 0.35
  */
 const VIS_COLD_FROM = 0.5
 const VIS_COLD_TO = 2.5
+/**
+ * Cloud tops this cold, °C, belong to deep convection, a dense overcast reaching 12 km and more,
+ * rather than to cirrus, which seldom reads colder than the first.
+ */
+const DEEP_FROM = -50
+const DEEP_TO = -65
 
 export interface SatelliteFrame {
   /** Scan time, unix seconds. */
   time: number
   /**
    * RGBA8, SATELLITE_SIZE², row 0 at the north edge of SATELLITE_BOUNDS: R low cloud cover,
-   * G cloud-top height within the cumulus layer, B high cloud cover, A 255.
+   * G cloud-top height within the cumulus layer, B high cloud cover, A deep convection.
    */
   data: Uint8Array
 }
@@ -166,6 +173,7 @@ function cloudFields(temps: Float32Array, heights: Float32Array, reflectance: Fl
   const low = new Float32Array(n * n)
   const top = new Float32Array(n * n)
   const high = new Float32Array(n * n)
+  const deep = new Float32Array(n * n)
   for (let i = 0; i < temps.length; i++) {
     const h = heights[i]
     const clear = clearSea - (h > 0 ? h * LAPSE : 0)
@@ -177,14 +185,15 @@ function cloudFields(temps: Float32Array, heights: Float32Array, reflectance: Fl
     }
     top[i] = smoothstep(t, clear - 3, clear - 30)
     high[i] = smoothstep(t, -15, -40)
+    deep[i] = smoothstep(t, DEEP_FROM, DEEP_TO)
   }
-  for (const f of [low, top, high]) blur(f, n, BLUR)
+  for (const f of [low, top, high, deep]) blur(f, n, BLUR)
   const out = new Uint8Array(n * n * 4)
   for (let i = 0; i < n * n; i++) {
     out[i * 4] = 255 * low[i]
     out[i * 4 + 1] = 255 * top[i]
     out[i * 4 + 2] = 255 * high[i]
-    out[i * 4 + 3] = 255
+    out[i * 4 + 3] = 255 * deep[i]
   }
   return out
 }

@@ -66,7 +66,7 @@ For `wrangler dev`, put the key in `worker/.dev.vars` (`CWA_API_KEY=...`, git-ig
 | Tropical cyclones | CWA open data (W-C0034-005) | Every active tropical cyclone: its hourly track so far and CWA's forecast, about four days ahead. Drawn above the clouds once the eye is high: the track, the forecast dashed with the circles its centre falls within at 70 % probability, and, at the scene time, the centre with its gale (15 m/s) and storm (25 m/s) radii and a label with pressure and maximum wind |
 | Measured output | Taipower open data (data.gov.tw 8931) | Net output of every generating unit every ten minutes; each farm sums its offshore units (Formosa 2 is 海能風, Greater Changhua 1 & 2a is 沃一風 and 沃二風, and so on). The farms run as it measured: as many turbines turn as the output calls for, the rest stand still, and the total matches it. That holds within 45 minutes of the reading, where the metrics panel and the turbine panel also give the reading and the model's own figure, and fades back to the model by three hours either side, Taipower publishing no history or forecast. It carries no CORS headers, so the Worker fetches it |
 | Measured wind | CWA open data (O-B0075-001) and Open-Meteo 10 m wind | The buoys within 80 km of a farm that measure wind (six in October 2026). Each measurement, taken from the anemometer (about 3.5 m up; CWA does not publish the height) to 10 m by the log law, gives a ratio to the model's 10 m wind at the buoy, and the farms' hub-height wind takes the blended ratio within about 40 km and 6 hours. The model keeps more weight than against the waves, since anemometers ride among breaking seas |
-| Clouds | Himawari-9 AHI via NASA GIBS | The only clouds: hourly scans over 113.5–131.5 E, 16.5–33 N (everything the camera can see), about 30 minutes behind real time, loaded as scene time needs them. Band 13 infrared (brightness temperature, lapse-corrected over land) and, by day, band 3 visible place the cumulus, set its height and lay the cirrus. Hours with no scan have no clouds |
+| Clouds | Himawari-9 AHI via NASA GIBS | The only clouds: hourly scans over 113.5–131.5 E, 16.5–33 N (everything the camera can see), about 30 minutes behind real time, loaded as scene time needs them. Band 13 infrared (brightness temperature, lapse-corrected over land) and, by day, band 3 visible place the cumulus, set its height and lay the cirrus and the overcast of deep convection, such as a typhoon's. Hours with no scan have no clouds |
 | Sun, moon and sky | Solar and lunar positions | Day, dusk and moonlit night (at the real phase) follow the scene clock |
 | Stars | Yale Bright Star Catalogue (BSC5, CDS V/50) | Baked by `scripts/build-stars.ts`: the 5,080 stars down to magnitude 6, turned to local sidereal time over Taiwan |
 | Moon surface | Solar System Scope 2k moon (after NASA LRO) | Baked by `scripts/build-moon.ts` into a 1024 × 512 albedo map, draped on the moon's near side |
@@ -239,7 +239,8 @@ moon and stars are set in display brightness.
 `data/satellite.ts` decodes the band 13 infrared back to brightness temperature with the layer's
 own colour map and calls cloud whatever is markedly colder than the clear sea (over land, the sea
 reduced by the lapse rate, with a wider margin for sun-warmed slopes); colder tops grow taller and
-the coldest become cirrus. By day the band 3 visible adds low cloud that reflects far more than sea
+the coldest become cirrus, except those below -50 to -65 °C: deep convection, a typhoon's eyewall
+and rain bands, drawn as a dense overcast that stays visible from the overview. By day the band 3 visible adds low cloud that reflects far more than sea
 or land. Consecutive hourly scans crossfade, so a time-lapse shows the real weather moving. There
 are no other clouds: the forecast hours, and anywhere GIBS cannot be reached, have a clear sky. They are ray-marched through a flat layer at 0.9–2.9 km (Perlin-Worley shape eroded by
 Worley detail, generated on the GPU at load) with multi-octave scattering and powder darkening,
@@ -330,7 +331,8 @@ the folder statically (`python3 -m http.server -d sea`) and open it.
   eroded by Worley detail (generated on the GPU at load), lit with multi-octave scattering, a
   dual-lobe phase and powder darkening. One pixel of each 2x2 block is marched per frame and the rest
   is carried by reprojection; a joint bilateral upsample keeps the horizon crisp. Wind-combed cirrus
-  above, cloud shadows and crepuscular rays below.
+  and deep-convection overcast on a sheet at 8.5 km, seen from below or above; cloud shadows and
+  crepuscular rays below.
 - **Sea**: three FFT cascades of full choppy displacement from a two-peak spectrum (wind sea and
   swell), a camera-centred radial grid that follows the Earth's curvature to the horizon, slope
   variance kept through the mip chain for filtered glitter, and whitecaps where the combined

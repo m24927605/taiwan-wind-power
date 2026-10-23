@@ -153,7 +153,13 @@ const COMPOSITE = /* glsl */ `
       float c = max(dot(viewDir(uv), uSunDir), 0.0);
       col += sunIrradiance(uCameraPos.y) * lit * pow(c, 10.0) * 0.0066 * uSunScreen.z * uExposure;
     }
-    outColor = vec4(mix(s.rgb, col, cloudFade()), s.a);
+    col = mix(s.rgb, col, cloudFade());
+    // Seen from above, the high cloud lies over everything below it (from below it is in the sky).
+    if (uCameraPos.y > HIGH_CLOUD) {
+      vec4 h = highCloud(viewDir(uv), uCameraPos);
+      col = mix(col, h.rgb * uExposure, h.a);
+    }
+    outColor = vec4(col, s.a);
   }
 `
 

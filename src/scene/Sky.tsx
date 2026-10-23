@@ -77,7 +77,7 @@ const createMaterial = (environment: boolean) =>
           + vec3(0.006, 0.014, 0.018) * (skyIrradiance() + sunIrradiance(0.0) * max(uSunDir.y, 0.0));
         col = mix(col, sea, smoothstep(0.02, -0.04, dir.y));
         #else
-        vec3 col = applyCirrus(skyRadiance(dir), dir, uCameraPos);
+        vec3 col = applyHighCloud(skyRadiance(dir), dir, uCameraPos);
         float r = RG + max(uCameraPos.y, 0.001);
         float x = acos(clamp(dot(dir, uSunDir), -1.0, 1.0)) / DISC_RADIUS;
         if (uMoonLight > 0.5) {
