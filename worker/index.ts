@@ -35,7 +35,14 @@ async function fetchBytes(url: string): Promise<ArrayBuffer> {
   // Uncompressed: inflating 1.7 MB of gzip would cost more CPU than the rest of the run.
   const res = await fetch(url, { headers: { 'accept-encoding': 'identity' } })
   if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`)
-  return res.arrayBuffer()
+  const bytes = await res.arrayBuffer()
+  // Open-Meteo can fail after sending 200, writing an error message in place of the data, so the
+  // body must at least open and close as JSON. Parsing it all would cost too much CPU.
+  const view = new Uint8Array(bytes)
+  const first = String.fromCharCode(view[0])
+  const last = String.fromCharCode(view[view.length - 1])
+  if (!'[{'.includes(first) || !']}'.includes(last)) throw new Error(`${new URL(url).host}: incomplete response`)
+  return bytes
 }
 
 async function refreshStations(env: Env): Promise<Stations> {
