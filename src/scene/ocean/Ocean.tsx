@@ -105,6 +105,7 @@ function createMaterial(elevation: Elevation, flats: THREE.Texture, waves: WaveS
       uFoamThreshold: { value: 0.5 },
       uMicroVariance: { value: 0.004 },
       uHs: { value: 1 },
+      uFoamWind: { value: new THREE.Vector2(0, 1) },
       uSeaLevel: { value: 0 },
     },
     vertexShader: /* glsl */ `
@@ -156,6 +157,8 @@ function createMaterial(elevation: Elevation, flats: THREE.Texture, waves: WaveS
       uniform float uFoamThreshold;
       uniform float uMicroVariance;
       uniform float uHs;
+      // Direction the wind sea travels, world x and z.
+      uniform vec2 uFoamWind;
       varying vec3 vWorld;
       varying vec2 vXZ;
       varying float vHeight;
@@ -184,6 +187,35 @@ function createMaterial(elevation: Elevation, flats: THREE.Texture, waves: WaveS
       float beckmann(float NoH, float m2) {
         float c2 = NoH * NoH;
         return exp((c2 - 1.0) / (c2 * m2)) / (PI * m2 * c2 * c2);
+      }
+
+      // Value noise for the lace of foam. Coordinates wrap every 512 m to keep their precision.
+      float hash(vec2 p) {
+        vec3 q = fract(vec3(p.xyx) * 0.1031);
+        q += dot(q, q.yzx + 33.33);
+        return fract((q.x + q.y) * q.z);
+      }
+      float valueNoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+      }
+      // Foam is not a haze over the water but patches and streaks of bubbles with water between:
+      // where the eye can resolve them, thin cover is scattered lace and dense cover solid white,
+      // drawn out downwind as gales draw it. Farther out, where the pattern is finer than a pixel,
+      // it is its average.
+      float lace(float cover, vec2 xz, float metresPerPixel) {
+        vec2 m = mod(xz * 1000.0, 512.0);
+        // Along and across the wind, stretched threefold along it.
+        m = vec2(dot(m, uFoamWind), dot(m, vec2(-uFoamWind.y, uFoamWind.x)) * 3.0);
+        float n = valueNoise(m / 4.0) * 0.55 + valueNoise(m / 1.2) * 0.3 + valueNoise(m / 0.4) * 0.15;
+        // The noise gathers about its middle: spread it to roughly even cover.
+        n = clamp((n - 0.5) * 2.2 + 0.5, 0.0, 1.0);
+        float edge = max(0.04, metresPerPixel * 0.2);
+        float density = cover * cover * (0.5 + 0.5 * cover);
+        float pattern = smoothstep(n - edge, n + edge, cover * cover) * (0.5 + 0.5 * cover);
+        return mix(pattern, density, smoothstep(0.3, 1.5, metresPerPixel));
       }
 
       void main() {
@@ -249,6 +281,7 @@ function createMaterial(elevation: Elevation, flats: THREE.Texture, waves: WaveS
         // is finer than a pixel and would shimmer from frame to frame, it is its average cover.
         float surf = clamp((uFoamThreshold + 0.9 - J) * 2.5, 0.0, 1.0) * breaking * resolved.x + breaking * 0.3 * (1.0 - resolved.x);
         float foam = max(max(whitecap, surf), s0.w * resolved.x + s1.w * 0.7 * resolved.y + s2.w * 0.4 * resolved.z) * (1.0 - exposed);
+        foam = lace(foam, vXZ, footprint * 1000.0);
         col = mix(col, 0.9 / PI * (downwelling + sun * max(dot(N, uSunDir), 0.0) * 0.3), foam * 0.9);
 
         // Exposed silt: dark and glossy with water just off it, paler where it has drained, with a
@@ -338,6 +371,8 @@ export function Ocean({ elevation, waveResolution }: { elevation: Elevation; wav
     u.uSurf1.value = waves.surface[1]
     u.uSurf2.value = waves.surface[2]
     u.uHs.value = Math.hypot(sea.windSea.hs, sea.swell.hs)
+    // World +x is east and -z north.
+    u.uFoamWind.value.set(Math.sin(sea.windSea.toward), -Math.cos(sea.windSea.toward))
     u.uSeaLevel.value = level
     u.uFoamThreshold.value = THREE.MathUtils.lerp(0.3, 1.0, whitecaps)
     u.uMicroVariance.value = 0.002 + 0.0012 * u10
