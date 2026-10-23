@@ -24,7 +24,7 @@ export function Toolbar() {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return
       const key = e.key.toLowerCase()
-      if (key === 'e') toggleEngineering()
+      if (key === 'e' && import.meta.env.DEV) toggleEngineering()
       else if (key === 'm') setTool(useStore.getState().tool === 'measure' ? 'inspect' : 'measure')
       else if (key === 'r') resetView()
       else if (key === 'escape') useStore.setState({ selected: null, measure: [] })
@@ -48,10 +48,13 @@ export function Toolbar() {
         <svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2" /></svg>
         <span>{t.measure}</span>
       </button>
-      <button className={engineering ? 'is-on is-eng' : ''} onClick={toggleEngineering} title={t.engineeringTitle}>
-        <svg viewBox="0 0 24 24"><path d="M8 3v3M16 3v3M8 18v3M16 18v3M3 8h3M3 16h3M18 8h3M18 16h3M6 6h12v12H6zM10 10h4v4h-4z" /></svg>
-        <span>{t.engineering}</span>
-      </button>
+      {/* Diagnostics for development only: frame times, draw calls, levels of detail. */}
+      {import.meta.env.DEV && (
+        <button className={engineering ? 'is-on is-eng' : ''} onClick={toggleEngineering} title={t.engineeringTitle}>
+          <svg viewBox="0 0 24 24"><path d="M8 3v3M16 3v3M8 18v3M16 18v3M3 8h3M3 16h3M18 8h3M18 16h3M6 6h12v12H6zM10 10h4v4h-4z" /></svg>
+          <span>{t.engineering}</span>
+        </button>
+      )}
       <button onClick={resetView} title={t.overviewTitle}>
         <svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 9.5V20h12V9.5" /></svg>
         <span>{t.overview}</span>

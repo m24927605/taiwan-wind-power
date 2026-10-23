@@ -101,7 +101,8 @@ coordinates are an approximate array layout, and the UI says so.
   3 km the view may run to the hazy horizon while the camera stays 30 km inside. Scripted flights
   orbit their target with the tilt following the zoom, so they stay inside too.
 - `M` measures great-circle distance and bearing. Points snap to turbines.
-- `E` toggles engineering mode, a diagnostic render plus live renderer statistics.
+- `E` toggles engineering mode, a diagnostic render plus live renderer statistics. Development
+  builds only, as is its toolbar button.
 - `Space` plays or pauses the time-lapse, `R` returns to the overview, and `Esc` clears the
   selection.
 
