@@ -8,6 +8,7 @@ import { cycloneAt } from '../data/weather'
 import { lonLatToWorld } from '../geo/domain'
 import { useT } from '../i18n'
 import { useStore } from '../state'
+import { panelRects } from '../ui/panels'
 import { AREA_LIFT } from './farmAreas'
 
 // Tropical cyclones as CWA tracks them: the path so far, the forecast path with the circles the
@@ -35,8 +36,7 @@ const at = (f: CycloneFix): [number, number, number] => {
   return [x, AREA_LIFT, z]
 }
 
-/** The cards a label must not hide under, and its clearance from them, px. */
-const PANELS = '.side > *, .legend, .timeline'
+/** A label's clearance from the cards, px. */
 const GAP = 10
 
 /**
@@ -50,11 +50,10 @@ function clearOfPanels(el: HTMLElement, shift: { x: number; y: number }) {
   const top = r.top - shift.y
   let x = 0
   let y = 0
-  for (const panel of document.querySelectorAll(PANELS)) {
-    const b = panel.getBoundingClientRect()
+  for (const b of panelRects()) {
     const l = left + x
     const t = top + y
-    if (b.width === 0 || l >= b.right + GAP || l + r.width <= b.left - GAP || t >= b.bottom + GAP || t + r.height <= b.top - GAP) continue
+    if (l >= b.right + GAP || l + r.width <= b.left - GAP || t >= b.bottom + GAP || t + r.height <= b.top - GAP) continue
     if (b.left - GAP - r.width >= GAP) x = b.left - GAP - r.width - left
     else y = b.top - GAP - r.height - top
   }

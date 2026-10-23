@@ -6,6 +6,7 @@ import type { Line2 } from 'three/examples/jsm/lines/Line2.js'
 import { WIND_FARMS } from '../data/windfarms'
 import { useT } from '../i18n'
 import { useStore } from '../state'
+import { panelRects } from '../ui/panels'
 import { flyToFarm } from './camera'
 import { AREA_LIFT, FARM_AREAS } from './farmAreas'
 
@@ -20,6 +21,8 @@ const FADE_FAR = 10
 const FADE_LOW = 1.5
 const FADE_HIGH = 6
 const DECLUTTER_EVERY = 6
+/** A label's clearance from the cards, px. */
+const GAP = 8
 
 const scratch = new THREE.Vector3()
 
@@ -51,23 +54,40 @@ export function FarmBounds() {
     })
 
     if (frame.current++ % DECLUTTER_EVERY !== 0) return
-    const placed: [number, number, number, number][] = []
+    type Rect = [number, number, number, number]
+    const cards: Rect[] = panelRects().map((r) => [r.left - GAP, r.top - GAP, r.right + GAP, r.bottom + GAP])
+    const placed: Rect[] = []
+    const onScreen = (r: Rect) => r[2] > 0 && r[0] < size.width && r[3] > 0 && r[1] < size.height
+    const clear = (r: Rect, of: Rect[]) => of.every((p) => r[2] < p[0] || r[0] > p[2] || r[3] < p[1] || r[1] > p[3])
+    const toScreen = (p: [number, number, number]) => {
+      scratch.set(...p).project(camera)
+      return [(scratch.x * 0.5 + 0.5) * size.width, (-scratch.y * 0.5 + 0.5) * size.height, scratch.z] as const
+    }
+    // Each farm's outline on screen: a label moved east must not cover a neighbour's.
+    const areas: Rect[] = bounds.map((b) => {
+      const pts = b.corners.map(toScreen)
+      return [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))]
+    })
     for (const i of priority) {
       const el = labels.current[i]
       if (!el) continue
       const b = bounds[i]
-      scratch.set(...b.anchor).project(camera)
-      const x = (scratch.x * 0.5 + 0.5) * size.width
-      const y = (-scratch.y * 0.5 + 0.5) * size.height
+      const [x, y, z] = toScreen(b.anchor)
+      const [ex, ey] = toScreen(b.east)
       const w = el.offsetWidth
       const h = el.offsetHeight
-      // Matches the CSS: the label sits left of the anchor, vertically centred on it.
-      const rect: [number, number, number, number] = [x - w, y - h / 2, x, y + h / 2]
-      const onScreen = scratch.z < 1 && rect[2] > 0 && rect[0] < size.width && rect[3] > 0 && rect[1] < size.height
-      const free = placed.every((p) => rect[2] < p[0] || rect[0] > p[2] || rect[3] < p[1] || rect[1] > p[3])
-      const show = onScreen && free && fade[i] > 0.5
-      if (show) placed.push(rect)
-      el.classList.toggle('is-hidden', !show)
+      // Matches the CSS: the label sits left of the western corner, vertically centred on it. Where
+      // a card covers that, it goes right of the eastern corner instead, clear of the other farms;
+      // where a larger farm's label is in the way, it is left out.
+      const left: Rect = [x - w, y - h / 2, x, y + h / 2]
+      const right: Rect = [ex, ey - h / 2, ex + w, ey + h / 2]
+      const fits = (r: Rect) => onScreen(r) && clear(r, cards) && clear(r, placed)
+      const fitsEast = fits(right) && clear(right, areas.filter((_, j) => j !== i))
+      const rect = z >= 1 || fade[i] <= 0.5 ? null : fits(left) ? left : !clear(left, cards) && fitsEast ? right : null
+      if (rect) placed.push(rect)
+      el.classList.toggle('is-hidden', !rect)
+      el.classList.toggle('is-right', rect === right)
+      el.style.translate = rect === right ? `${ex - x}px ${ey - y}px` : ''
     }
   })
 

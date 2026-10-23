@@ -1035,6 +1035,11 @@ small {
   background: rgba(255, 210, 122, 0.6);
 }
 
+.farm-label.is-right {
+  flex-direction: row-reverse;
+  transform: translate(0, -50%);
+}
+
 .farm-label.is-hidden {
   opacity: 0;
 }

@@ -10,6 +10,8 @@ export interface FarmArea {
   center: [x: number, z: number]
   /** Westernmost corner: labels hang off it into the open strait. */
   anchor: [number, number, number]
+  /** The eastern corner, where the label goes when a card covers the western one. */
+  east: [number, number, number]
   corners: [number, number, number][]
   width: number
   depth: number
@@ -50,6 +52,7 @@ export const FARM_AREAS: FarmArea[] = WIND_FARMS.map((farm, f) => {
   return {
     center: [c[0], c[2]],
     anchor: corners.slice(0, 4).reduce((w, p) => (p[0] < w[0] ? p : w)),
+    east: corners.slice(0, 4).reduce((e, p) => (p[0] > e[0] ? p : e)),
     corners,
     width: b1 - b0,
     depth: a1 - a0,
